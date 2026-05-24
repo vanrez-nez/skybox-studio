@@ -5,6 +5,7 @@ export type MenuId = "file" | "edit";
 export type MenuCommandId = "file.export" | "file.load";
 export type MenuEventId = MenuId | MenuCommandId;
 export type GradientMode = "linear" | "radial";
+export type FieldGradientMode = "inverse-distance" | "gaussian";
 
 export type GradientStop = {
   color: string;
@@ -20,6 +21,22 @@ export type GradientState = {
   stops: GradientStop[];
 };
 
+export type FieldGradientAnchor = {
+  color: string;
+  id: string;
+  x: number;
+  y: number;
+};
+
+export type FieldGradientState = {
+  amplitude: number;
+  anchors: FieldGradientAnchor[];
+  frequency: number;
+  mode: FieldGradientMode;
+  power: number;
+  selectedAnchorId: string;
+};
+
 type MenuEvent = {
   id: MenuEventId;
   issuedAt: number;
@@ -27,14 +44,25 @@ type MenuEvent = {
 
 type WorkspaceStore = {
   activeView: WorkspaceView;
+  fieldGradient: FieldGradientState;
   gradient: GradientState;
   lastMenuEvent: MenuEvent | null;
+  addFieldGradientAnchor: (anchor: Omit<FieldGradientAnchor, "id">) => void;
   emitMenuEvent: (id: MenuEventId) => void;
+  randomizeFieldGradient: () => void;
+  removeFieldGradientAnchor: (id: string) => void;
   removeGradientStop: (id: string) => void;
+  resetFieldGradient: () => void;
+  selectFieldGradientAnchor: (id: string) => void;
   selectGradientStop: (id: string) => void;
   setActiveView: (view: WorkspaceView) => void;
+  setFieldGradientAmplitude: (amplitude: number) => void;
+  setFieldGradientFrequency: (frequency: number) => void;
+  setFieldGradientMode: (mode: FieldGradientMode) => void;
+  setFieldGradientPower: (power: number) => void;
   setGradientMode: (mode: GradientMode) => void;
   setGradientRotation: (rotation: number) => void;
+  updateFieldGradientAnchor: (id: string, update: Partial<Omit<FieldGradientAnchor, "id">>) => void;
   updateGradientStop: (id: string, update: Partial<Omit<GradientStop, "id">>) => void;
 };
 
@@ -49,12 +77,53 @@ const defaultGradientStops: GradientStop[] = [
   { id: "end", color: "#ff8a00", location: 100, opacity: 100 },
 ];
 
+const defaultFieldGradientAnchors: FieldGradientAnchor[] = [
+  { id: "cyan", color: "#35c4e0", x: 0.12, y: 0.2 },
+  { id: "blue", color: "#2f80d1", x: 0.07, y: 0.52 },
+  { id: "yellow", color: "#f5cc42", x: 0.6, y: 0.44 },
+  { id: "orange", color: "#f08a28", x: 0.88, y: 0.78 },
+];
+const FIELD_GRADIENT_MAX_ANCHORS = 8;
+
 function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
+function clampUnit(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function clampRange(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function randomHexColor() {
+  return `#${Array.from({ length: 3 }, () =>
+    Math.floor(Math.random() * 256)
+      .toString(16)
+      .padStart(2, "0")
+  ).join("")}`;
+}
+
+function createRandomFieldAnchors(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    color: randomHexColor(),
+    id: `field-${Date.now()}-${index}`,
+    x: Math.random(),
+    y: 0.12 + Math.random() * 0.76,
+  }));
+}
+
 export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   activeView: "editor",
+  fieldGradient: {
+    amplitude: 0.12,
+    anchors: defaultFieldGradientAnchors,
+    frequency: 1.2,
+    mode: "inverse-distance",
+    power: 2.2,
+    selectedAnchorId: "yellow",
+  },
   gradient: {
     mode: "radial",
     rotation: 0,
@@ -62,7 +131,59 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
     stops: defaultGradientStops,
   },
   lastMenuEvent: null,
+  addFieldGradientAnchor: (anchor) =>
+    set((state) => {
+      if (state.fieldGradient.anchors.length >= FIELD_GRADIENT_MAX_ANCHORS) {
+        return state;
+      }
+
+      const nextAnchor = {
+        ...anchor,
+        id: `field-${Date.now()}`,
+        x: clampUnit(anchor.x),
+        y: clampUnit(anchor.y),
+      };
+
+      return {
+        fieldGradient: {
+          ...state.fieldGradient,
+          anchors: [...state.fieldGradient.anchors, nextAnchor],
+          selectedAnchorId: nextAnchor.id,
+        },
+      };
+    }),
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
+  randomizeFieldGradient: () =>
+    set((state) => {
+      const nextAnchors = createRandomFieldAnchors(state.fieldGradient.anchors.length);
+
+      return {
+        fieldGradient: {
+          ...state.fieldGradient,
+          anchors: nextAnchors,
+          selectedAnchorId: nextAnchors[0].id,
+        },
+      };
+    }),
+  removeFieldGradientAnchor: (id) =>
+    set((state) => {
+      if (state.fieldGradient.anchors.length <= 1) {
+        return state;
+      }
+
+      const nextAnchors = state.fieldGradient.anchors.filter((anchor) => anchor.id !== id);
+
+      return {
+        fieldGradient: {
+          ...state.fieldGradient,
+          anchors: nextAnchors,
+          selectedAnchorId:
+            state.fieldGradient.selectedAnchorId === id
+              ? nextAnchors[0].id
+              : state.fieldGradient.selectedAnchorId,
+        },
+      };
+    }),
   removeGradientStop: (id) =>
     set((state) => {
       if (state.gradient.stops.length <= 2) {
@@ -80,6 +201,25 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
         },
       };
     }),
+  resetFieldGradient: () =>
+    set((state) => ({
+      fieldGradient: {
+        ...state.fieldGradient,
+        amplitude: 0.12,
+        anchors: defaultFieldGradientAnchors,
+        frequency: 1.2,
+        mode: "inverse-distance",
+        power: 2.2,
+        selectedAnchorId: "yellow",
+      },
+    })),
+  selectFieldGradientAnchor: (id) =>
+    set((state) => ({
+      fieldGradient: {
+        ...state.fieldGradient,
+        selectedAnchorId: id,
+      },
+    })),
   selectGradientStop: (id) =>
     set((state) => ({
       gradient: {
@@ -88,6 +228,34 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
       },
     })),
   setActiveView: (view) => set({ activeView: view }),
+  setFieldGradientAmplitude: (amplitude) =>
+    set((state) => ({
+      fieldGradient: {
+        ...state.fieldGradient,
+        amplitude: clampRange(amplitude, 0, 0.6),
+      },
+    })),
+  setFieldGradientFrequency: (frequency) =>
+    set((state) => ({
+      fieldGradient: {
+        ...state.fieldGradient,
+        frequency: clampRange(frequency, 0.3, 4),
+      },
+    })),
+  setFieldGradientMode: (mode) =>
+    set((state) => ({
+      fieldGradient: {
+        ...state.fieldGradient,
+        mode,
+      },
+    })),
+  setFieldGradientPower: (power) =>
+    set((state) => ({
+      fieldGradient: {
+        ...state.fieldGradient,
+        power: clampRange(power, 0.4, 6),
+      },
+    })),
   setGradientMode: (mode) =>
     set((state) => ({
       gradient: {
@@ -100,6 +268,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
       gradient: {
         ...state.gradient,
         rotation,
+      },
+    })),
+  updateFieldGradientAnchor: (id, update) =>
+    set((state) => ({
+      fieldGradient: {
+        ...state.fieldGradient,
+        anchors: state.fieldGradient.anchors.map((anchor) =>
+          anchor.id === id
+            ? {
+                ...anchor,
+                ...update,
+                x: update.x === undefined ? anchor.x : clampUnit(update.x),
+                y: update.y === undefined ? anchor.y : clampUnit(update.y),
+              }
+            : anchor
+        ),
       },
     })),
   updateGradientStop: (id, update) =>

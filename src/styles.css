@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@melloware/coloris/dist/coloris.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -194,5 +195,88 @@
   html {
     @apply font-sans;
     font-size: 15px;
+  }
+}
+
+.coloris-panel-surface .clr-picker {
+  background-color: var(--card);
+  box-shadow: none;
+  color: var(--card-foreground);
+}
+
+.floating-widget-surface {
+  box-shadow:
+    0 24px 64px hsl(0 0% 0% / 0.55),
+    0 8px 24px hsl(0 0% 0% / 0.4),
+    var(--shadow-2xl);
+}
+
+.gradient-stop-handle {
+  border: 2px solid var(--card);
+  box-shadow: 0 0 6px hsl(0 0% 0% / 0.55);
+}
+
+.gradient-stop-handle-selected {
+  border-color: var(--foreground);
+}
+
+.widget-panel {
+  container-type: inline-size;
+}
+
+.widget-inline-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.widget-field {
+  display: grid;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.widget-field-mode {
+  min-width: 0;
+  flex: 1 1 0;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.widget-field-rotation {
+  flex: 0 0 auto;
+  grid-template-columns: auto auto auto;
+}
+
+.widget-field-color {
+  flex: 0 0 auto;
+  grid-template-columns: auto auto;
+}
+
+.widget-field-number {
+  min-width: 6rem;
+  flex: 1 1 6rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+@container (max-width: 349px) {
+  .widget-inline-fields {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .widget-field {
+    flex: none;
+    width: 100%;
+  }
+
+  .widget-field-rotation {
+    grid-template-columns: auto auto 3rem;
+    justify-content: start;
+  }
+
+  .widget-field-color {
+    justify-content: start;
   }
 }

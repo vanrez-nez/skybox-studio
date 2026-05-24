@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 export function EditorActionPanel() {
   return (
     <FloatingActionPanel aria-label="Editor actions" placement="top-left">
-      <Button size="sm" variant="ghost">
+      <Button className="text-xs" size="sm" variant="ghost">
         <RotateCcw />
         Undo
       </Button>
-      <Button size="sm" variant="ghost">
+      <Button className="text-xs" size="sm" variant="ghost">
         <RotateCw />
         Redo
       </Button>

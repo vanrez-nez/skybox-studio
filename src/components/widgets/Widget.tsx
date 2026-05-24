@@ -25,6 +25,7 @@ type WidgetProps = Omit<ComponentPropsWithoutRef<"section">, "title"> & {
   contentClassName?: string;
   defaultCollapsed?: boolean;
   floatingPosition?: WidgetPosition;
+  ignoreFloatingDismissSelector?: string;
   onCollapsedChange?: (collapsed: boolean) => void;
   onFloatingDismiss?: () => void;
   title: ReactNode;
@@ -33,6 +34,7 @@ type WidgetProps = Omit<ComponentPropsWithoutRef<"section">, "title"> & {
 };
 
 const DEFAULT_FLOATING_POSITION: WidgetPosition = { x: 12, y: 12 };
+const WIDGET_CONTENT_TRANSITION_MS = 200;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -45,6 +47,7 @@ export function Widget({
   contentClassName,
   defaultCollapsed = false,
   floatingPosition = DEFAULT_FLOATING_POSITION,
+  ignoreFloatingDismissSelector,
   onCollapsedChange,
   onFloatingDismiss,
   title,
@@ -58,6 +61,9 @@ export function Widget({
   const [resolvedPosition, setResolvedPosition] = useState(floatingPosition);
   const isFloating = variant === "floating";
   const isCollapsed = isFloating ? false : collapsed ?? internalCollapsed;
+  const [shouldRenderContent, setShouldRenderContent] = useState(!isCollapsed);
+  const [isContentOpaque, setIsContentOpaque] = useState(!isCollapsed);
+  const previousCollapsedRef = useRef(isCollapsed);
 
   const setCollapsed = (nextCollapsed: boolean) => {
     if (collapsed === undefined) {
@@ -110,10 +116,20 @@ export function Widget({
     }
 
     const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target;
+
       if (
-        event.target instanceof Node &&
+        ignoreFloatingDismissSelector &&
+        target instanceof Element &&
+        target.closest(ignoreFloatingDismissSelector)
+      ) {
+        return;
+      }
+
+      if (
+        target instanceof Node &&
         widgetRef.current &&
-        !widgetRef.current.contains(event.target)
+        !widgetRef.current.contains(target)
       ) {
         onFloatingDismiss();
       }
@@ -127,14 +143,55 @@ export function Widget({
       window.clearTimeout(outsideClickListener);
       document.removeEventListener("click", handleDocumentClick);
     };
-  }, [isFloating, onFloatingDismiss]);
+  }, [ignoreFloatingDismissSelector, isFloating, onFloatingDismiss]);
+
+  useEffect(() => {
+    if (isFloating) {
+      setShouldRenderContent(true);
+      setIsContentOpaque(true);
+      previousCollapsedRef.current = isCollapsed;
+      return;
+    }
+
+    const previousCollapsed = previousCollapsedRef.current;
+    previousCollapsedRef.current = isCollapsed;
+
+    if (previousCollapsed === isCollapsed) {
+      return;
+    }
+
+    if (!isCollapsed) {
+      setShouldRenderContent(true);
+      setIsContentOpaque(false);
+
+      const revealContent = window.setTimeout(() => {
+        setIsContentOpaque(true);
+      }, WIDGET_CONTENT_TRANSITION_MS);
+
+      return () => {
+        window.clearTimeout(revealContent);
+      };
+    }
+
+    setIsContentOpaque(false);
+
+    const unmountContent = window.setTimeout(() => {
+      setShouldRenderContent(false);
+    }, WIDGET_CONTENT_TRANSITION_MS);
+
+    return () => {
+      window.clearTimeout(unmountContent);
+    };
+  }, [isCollapsed, isFloating]);
 
   const widgetElement = (
     <section
       ref={widgetRef}
       className={cn(
-        "overflow-hidden border bg-card text-card-foreground",
-        isFloating ? "fixed z-50 rounded-md shadow-2xl" : "w-full rounded-md shadow-none",
+        "select-none overflow-hidden border bg-card text-xs text-card-foreground [&_button]:text-xs [&_input]:text-xs [&_select]:text-xs",
+        isFloating
+          ? "floating-widget-surface fixed z-50 rounded-md shadow-2xl"
+          : "widget-panel w-full rounded-md shadow-none",
         className
       )}
       style={
@@ -149,16 +206,12 @@ export function Widget({
       {...props}
     >
       <header
-        className={cn("flex items-center gap-2 border-b px-2", isFloating ? "h-7" : "h-9")}
+        className={cn(
+          "flex items-center gap-2 px-3",
+          !isCollapsed && "border-b",
+          isFloating ? "h-7" : "h-9"
+        )}
       >
-        <div
-          className={cn(
-            "min-w-0 flex-1 truncate font-medium",
-            isFloating ? "text-xs" : "text-sm"
-          )}
-        >
-          {title}
-        </div>
         {!isFloating ? (
           <Button
             aria-label={isCollapsed ? "Expand widget" : "Collapse widget"}
@@ -170,10 +223,48 @@ export function Widget({
             {isCollapsed ? <ChevronRight /> : <ChevronDown />}
           </Button>
         ) : null}
+        {isFloating ? (
+          <div className="min-w-0 flex-1 truncate text-xs font-medium">
+            {title}
+          </div>
+        ) : (
+          <button
+            aria-expanded={!isCollapsed}
+            className="min-w-0 flex-1 truncate text-left text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            onClick={() => setCollapsed(!isCollapsed)}
+            type="button"
+          >
+            {title}
+          </button>
+        )}
       </header>
-      {!isCollapsed ? (
-        <div className={cn("min-h-16 p-2", contentClassName)}>{children}</div>
-      ) : null}
+      {isFloating ? (
+        <div className={cn("min-h-16 p-3", contentClassName)}>{children}</div>
+      ) : (
+        <div
+          aria-hidden={isCollapsed}
+          className={cn(
+            "grid transition-[grid-template-rows] duration-200 ease-out",
+            isCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            {shouldRenderContent ? (
+              <div
+                className={cn(
+                  "min-h-16 p-3 transition-opacity ease-out",
+                  isContentOpaque
+                    ? "opacity-100 duration-150"
+                    : "pointer-events-none opacity-0 duration-100",
+                  contentClassName
+                )}
+              >
+                {children}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </section>
   );
 

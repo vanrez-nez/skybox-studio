@@ -27,6 +27,7 @@ export function SidebarSampleWidget() {
     <>
       <Widget title="Properties">
         <Button
+          className="text-xs"
           onClick={toggleFloating}
           size="sm"
           type="button"
@@ -44,7 +45,7 @@ export function SidebarSampleWidget() {
           title="Floating sample"
           variant="floating"
         >
-          <Button size="sm" type="button" variant="outline">
+          <Button className="text-xs" size="sm" type="button" variant="outline">
             Sample action
           </Button>
         </Widget>

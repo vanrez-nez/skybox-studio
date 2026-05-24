@@ -47,7 +47,7 @@ export function FloatingActionPanel({
   return (
     <div
       className={cn(
-        "absolute z-10 flex gap-1 rounded-md border bg-card p-1 shadow-sm",
+        "absolute z-10 flex gap-1 rounded-md border bg-card p-1 text-xs shadow-sm [&_button]:text-xs",
         placementClassName[placement],
         orientationClassName[orientation],
         className

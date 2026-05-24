@@ -10,7 +10,7 @@ const viewIcons: Record<WorkspaceView, LucideIcon> = {
 
 export function ViewTabs() {
   return (
-    <TabsList aria-label="Workspace views" className="h-full">
+    <TabsList aria-label="Workspace views" className="h-full pl-2">
       {workspaceViews.map((view) => {
         const Icon = viewIcons[view.id];
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 import {
@@ -10,10 +10,26 @@ import {
   useWorkspaceStore,
   type WorkspaceView,
 } from "@/store/workspace-store";
+import { RotationGizmo } from "@/components/workspace/RotationGizmo";
 
 type ThreeWorkspaceSceneProps = {
   mode: WorkspaceView;
 };
+
+type QuaternionTuple = [number, number, number, number];
+type VectorTuple = [number, number, number];
+
+const INITIAL_CAMERA_ROTATION = new THREE.Euler(0.08, -0.35, 0, "YXZ");
+const AXIS_ANIMATION_DURATION_MS = 320;
+const AXIS_TOGGLE_DOT_THRESHOLD = 0.985;
+
+function quaternionToTuple(quaternion: THREE.Quaternion): QuaternionTuple {
+  return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
+}
+
+function easeOutCubic(progress: number) {
+  return 1 - (1 - progress) ** 3;
+}
 
 export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -21,7 +37,21 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const renderRef = useRef<(() => void) | null>(null);
   const skyboxTextureRef = useRef<BakedSkyboxTexture | null>(null);
   const updateSkyboxRef = useRef<((nextGradient: GradientState) => void) | null>(null);
+  const lookAtAxisDirectionRef = useRef<((direction: VectorTuple) => void) | null>(null);
+  const resetOrientationRef = useRef<(() => void) | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const [gizmoOrientation, setGizmoOrientation] = useState<QuaternionTuple>(() =>
+    quaternionToTuple(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION))
+  );
   const gradient = useWorkspaceStore((state) => state.gradient);
+
+  const handleGizmoAxisSelect = useCallback((direction: VectorTuple) => {
+    lookAtAxisDirectionRef.current?.(direction);
+  }, []);
+
+  const handleGizmoReset = useCallback(() => {
+    resetOrientationRef.current?.();
+  }, []);
 
   useEffect(() => {
     renderRef.current?.();
@@ -51,7 +81,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     const initialSkyboxTexture = createTextureBakingSkyboxTexture(gradient);
-    const cameraRotation = new THREE.Euler(0.08, -0.35, 0, "YXZ");
+    const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     const pointerState = {
       id: -1,
       pitch: cameraRotation.x,
@@ -70,10 +100,31 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     const render = () => {
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, canvas.width, canvas.height);
       renderer.render(scene, camera);
     };
 
     renderRef.current = render;
+
+    const syncGizmoOrientation = () => {
+      setGizmoOrientation(quaternionToTuple(camera.quaternion));
+    };
+
+    const syncPointerRotation = () => {
+      cameraRotation.setFromQuaternion(camera.quaternion, "YXZ");
+      pointerState.pitch = cameraRotation.x;
+      pointerState.yaw = cameraRotation.y;
+    };
+
+    const cancelCameraAnimation = () => {
+      if (animationFrameRef.current === null) {
+        return;
+      }
+
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    };
 
     updateSkyboxRef.current = (nextGradient) => {
       const previousTexture = skyboxTextureRef.current;
@@ -86,10 +137,106 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     const applyCameraRotation = () => {
+      cancelCameraAnimation();
       cameraRotation.set(pointerState.pitch, pointerState.yaw, 0, "YXZ");
       camera.rotation.copy(cameraRotation);
+      syncGizmoOrientation();
       render();
     };
+
+    const rotateCameraFromPointerDelta = (deltaX: number, deltaY: number) => {
+      const pitchLimit = Math.PI / 2 - 0.01;
+
+      pointerState.yaw -= deltaX * 0.006;
+      pointerState.pitch = THREE.MathUtils.clamp(
+        pointerState.pitch - deltaY * 0.006,
+        -pitchLimit,
+        pitchLimit
+      );
+      applyCameraRotation();
+    };
+
+    const getAxisQuaternion = (direction: VectorTuple) => {
+      const requestedDirection = new THREE.Vector3(...direction).normalize();
+      const currentForwardDirection = new THREE.Vector3(0, 0, -1)
+        .applyQuaternion(camera.quaternion)
+        .normalize();
+      const axisDirection =
+        currentForwardDirection.dot(requestedDirection) > AXIS_TOGGLE_DOT_THRESHOLD
+          ? requestedDirection.negate()
+          : requestedDirection;
+      const fallbackUp = Math.abs(axisDirection.y) > 0.98
+        ? new THREE.Vector3(0, 0, axisDirection.y > 0 ? -1 : 1)
+        : new THREE.Vector3(0, 1, 0);
+      const targetCamera = camera.clone();
+
+      targetCamera.position.set(0, 0, 0);
+      targetCamera.up.copy(fallbackUp);
+      targetCamera.lookAt(axisDirection);
+
+      return targetCamera.quaternion;
+    };
+
+    const lookAtAxisDirection = (direction: VectorTuple) => {
+      const startQuaternion = camera.quaternion.clone();
+      const targetQuaternion = getAxisQuaternion(direction);
+      const startedAt = performance.now();
+
+      cancelCameraAnimation();
+
+      const tick = (time: number) => {
+        const progress = Math.min(1, (time - startedAt) / AXIS_ANIMATION_DURATION_MS);
+        const easedProgress = easeOutCubic(progress);
+
+        camera.quaternion.copy(startQuaternion).slerp(targetQuaternion, easedProgress);
+        syncPointerRotation();
+        syncGizmoOrientation();
+        render();
+
+        if (progress < 1) {
+          animationFrameRef.current = window.requestAnimationFrame(tick);
+          return;
+        }
+
+        animationFrameRef.current = null;
+      };
+
+      animationFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    const animateToQuaternion = (targetQuaternion: THREE.Quaternion) => {
+      const startQuaternion = camera.quaternion.clone();
+      const startedAt = performance.now();
+
+      cancelCameraAnimation();
+
+      const tick = (time: number) => {
+        const progress = Math.min(1, (time - startedAt) / AXIS_ANIMATION_DURATION_MS);
+        const easedProgress = easeOutCubic(progress);
+
+        camera.quaternion.copy(startQuaternion).slerp(targetQuaternion, easedProgress);
+        syncPointerRotation();
+        syncGizmoOrientation();
+        render();
+
+        if (progress < 1) {
+          animationFrameRef.current = window.requestAnimationFrame(tick);
+          return;
+        }
+
+        animationFrameRef.current = null;
+      };
+
+      animationFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    const resetOrientation = () => {
+      animateToQuaternion(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION));
+    };
+
+    lookAtAxisDirectionRef.current = lookAtAxisDirection;
+    resetOrientationRef.current = resetOrientation;
+    syncGizmoOrientation();
 
     const releasePointer = (event: PointerEvent) => {
       if (pointerState.id !== event.pointerId) {
@@ -106,6 +253,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     const onPointerDown = (event: PointerEvent) => {
       event.preventDefault();
+
       pointerState.id = event.pointerId;
       pointerState.previousX = event.clientX;
       pointerState.previousY = event.clientY;
@@ -115,23 +263,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     const onPointerMove = (event: PointerEvent) => {
       if (pointerState.id !== event.pointerId) {
+        canvas.style.cursor = "grab";
         return;
       }
 
       event.preventDefault();
       const deltaX = event.clientX - pointerState.previousX;
       const deltaY = event.clientY - pointerState.previousY;
-      const pitchLimit = Math.PI / 2 - 0.01;
 
       pointerState.previousX = event.clientX;
       pointerState.previousY = event.clientY;
-      pointerState.yaw -= deltaX * 0.006;
-      pointerState.pitch = THREE.MathUtils.clamp(
-        pointerState.pitch - deltaY * 0.006,
-        -pitchLimit,
-        pitchLimit
-      );
-      applyCameraRotation();
+      rotateCameraFromPointerDelta(deltaX, deltaY);
     };
 
     canvas.addEventListener("pointerdown", onPointerDown);
@@ -159,6 +301,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     return () => {
       renderRef.current = null;
       updateSkyboxRef.current = null;
+      lookAtAxisDirectionRef.current = null;
+      resetOrientationRef.current = null;
+      cancelCameraAnimation();
       skyboxTextureRef.current = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -183,6 +328,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         aria-label={`${mode === "editor" ? "Editor" : "Preview"} skybox scene`}
         className="block h-full w-full"
         data-workspace-scene="three"
+      />
+      <RotationGizmo
+        onAxisSelect={handleGizmoAxisSelect}
+        onReset={handleGizmoReset}
+        orientation={gizmoOrientation}
       />
     </div>
   );

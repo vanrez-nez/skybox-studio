@@ -5,6 +5,7 @@ import { EditorView } from "@/components/views/EditorView";
 import { PreviewView } from "@/components/views/PreviewView";
 import { useWorkspaceStore, type WorkspaceView } from "@/store/workspace-store";
 import { AppFooter } from "./AppFooter";
+import { WorkspaceSplitLayout } from "./WorkspaceSplitLayout";
 
 export function AppLayout() {
   const activeView = useWorkspaceStore((state) => state.activeView);
@@ -12,7 +13,7 @@ export function AppLayout() {
 
   return (
     <Tabs
-      className="min-h-screen w-full"
+      className="h-screen w-full overflow-hidden"
       onValueChange={(value) => setActiveView(value as WorkspaceView)}
       value={activeView}
     >
@@ -21,12 +22,14 @@ export function AppLayout() {
         <ViewTabs />
       </header>
       <main className="flex min-h-0 flex-1">
-        <TabsContent value="editor" className="m-0 flex-1">
-          <EditorView />
-        </TabsContent>
-        <TabsContent value="preview" className="m-0 flex-1">
-          <PreviewView />
-        </TabsContent>
+        <WorkspaceSplitLayout>
+          <TabsContent value="editor" className="m-0 h-full">
+            <EditorView />
+          </TabsContent>
+          <TabsContent value="preview" className="m-0 h-full">
+            <PreviewView />
+          </TabsContent>
+        </WorkspaceSplitLayout>
       </main>
       <AppFooter />
     </Tabs>

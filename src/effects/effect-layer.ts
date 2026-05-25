@@ -1,10 +1,10 @@
-import type { FieldGradientState, GradientState } from "@/store/modules/layers";
+import type { FieldGradientState, GradientState, ImageState } from "@/store/modules/layers";
 import {
   normalizeBlendMode,
   type EffectLayerBlendMode,
 } from "@/effects/blend-modes";
 
-export type EffectLayerType = "gradient" | "field-gradient";
+export type EffectLayerType = "gradient" | "field-gradient" | "image";
 export type { EffectLayerBlendMode };
 
 export type SerializedGradientEffect = {
@@ -17,9 +17,14 @@ export type SerializedFieldGradientEffect = {
   type: "field-gradient";
 };
 
+export type SerializedImageEffect = {
+  params: ImageState;
+  type: "image";
+};
+
 export type SerializedEffectLayer = {
   blendMode?: EffectLayerBlendMode;
-  effect: SerializedGradientEffect | SerializedFieldGradientEffect;
+  effect: SerializedGradientEffect | SerializedFieldGradientEffect | SerializedImageEffect;
   enabled: boolean;
   id: string;
   name: string;
@@ -44,6 +49,15 @@ export type EffectLayer =
       opacity: number;
       params: FieldGradientState;
       type: "field-gradient";
+    }
+  | {
+      blendMode: EffectLayerBlendMode;
+      enabled: boolean;
+      id: string;
+      name: string;
+      opacity: number;
+      params: ImageState;
+      type: "image";
     };
 
 export type EffectLayerAdapter<TType extends EffectLayerType, TParams> = {
@@ -67,6 +81,10 @@ export function cloneFieldGradientState(fieldGradient: FieldGradientState): Fiel
   };
 }
 
+export function cloneImageState(image: ImageState): ImageState {
+  return { ...image };
+}
+
 export const gradientLayerAdapter: EffectLayerAdapter<"gradient", GradientState> = {
   getDefaultName: () => "Gradient",
   load: (serialized) => cloneGradientState(serialized.params),
@@ -81,13 +99,22 @@ export const fieldGradientLayerAdapter: EffectLayerAdapter<"field-gradient", Fie
   type: "field-gradient",
 };
 
+export const imageLayerAdapter: EffectLayerAdapter<"image", ImageState> = {
+  getDefaultName: () => "Image",
+  load: (serialized) => cloneImageState(serialized.params),
+  serialize: (params) => ({ params: cloneImageState(params), type: "image" }),
+  type: "image",
+};
+
 export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer {
   return {
     blendMode: layer.blendMode,
     effect:
       layer.type === "gradient"
         ? gradientLayerAdapter.serialize(layer.params)
-        : fieldGradientLayerAdapter.serialize(layer.params),
+        : layer.type === "field-gradient"
+          ? fieldGradientLayerAdapter.serialize(layer.params)
+          : imageLayerAdapter.serialize(layer.params),
     enabled: layer.enabled,
     id: layer.id,
     name: layer.name,
@@ -96,23 +123,37 @@ export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer 
 }
 
 export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer {
-  return serialized.effect.type === "gradient"
-    ? {
-        blendMode: normalizeBlendMode(serialized.blendMode),
-        enabled: serialized.enabled,
-        id: serialized.id,
-        name: serialized.name,
-        opacity: serialized.opacity ?? 100,
-        params: gradientLayerAdapter.load(serialized.effect),
-        type: "gradient",
-      }
-    : {
-        blendMode: normalizeBlendMode(serialized.blendMode),
-        enabled: serialized.enabled,
-        id: serialized.id,
-        name: serialized.name,
-        opacity: serialized.opacity ?? 100,
-        params: fieldGradientLayerAdapter.load(serialized.effect),
-        type: "field-gradient",
-      };
+  if (serialized.effect.type === "gradient") {
+    return {
+      blendMode: normalizeBlendMode(serialized.blendMode),
+      enabled: serialized.enabled,
+      id: serialized.id,
+      name: serialized.name,
+      opacity: serialized.opacity ?? 100,
+      params: gradientLayerAdapter.load(serialized.effect),
+      type: "gradient",
+    };
+  }
+
+  if (serialized.effect.type === "field-gradient") {
+    return {
+      blendMode: normalizeBlendMode(serialized.blendMode),
+      enabled: serialized.enabled,
+      id: serialized.id,
+      name: serialized.name,
+      opacity: serialized.opacity ?? 100,
+      params: fieldGradientLayerAdapter.load(serialized.effect),
+      type: "field-gradient",
+    };
+  }
+
+  return {
+    blendMode: normalizeBlendMode(serialized.blendMode),
+    enabled: serialized.enabled,
+    id: serialized.id,
+    name: serialized.name,
+    opacity: serialized.opacity ?? 100,
+    params: imageLayerAdapter.load(serialized.effect),
+    type: "image",
+  };
 }

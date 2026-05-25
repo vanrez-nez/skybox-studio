@@ -5,11 +5,13 @@ import { reorderWithEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/r
 import {
   cloneFieldGradientState,
   cloneGradientState,
+  cloneImageState,
   type EffectLayer,
   type EffectLayerBlendMode,
   type EffectLayerType,
   fieldGradientLayerAdapter,
   gradientLayerAdapter,
+  imageLayerAdapter,
 } from "@/effects/effect-layer";
 import type { HistoryParticipant, WorkspaceStore } from "@/store/app";
 
@@ -46,10 +48,21 @@ export type FieldGradientState = {
   selectedAnchorId: string;
 };
 
+export type ImageState = {
+  byteSize: number;
+  fileName: string;
+  height: number;
+  loadedAt: number | null;
+  mimeType: string;
+  src: string | null;
+  width: number;
+};
+
 export type LayersHistorySnapshot = {
   effectLayers: EffectLayer[];
   fieldGradient: FieldGradientState;
   gradient: GradientState;
+  image: ImageState;
   selectedLayerId: string;
 };
 
@@ -66,6 +79,7 @@ export type LayersSlice = {
   effectLayers: EffectLayer[];
   fieldGradient: FieldGradientState;
   gradient: GradientState;
+  image: ImageState;
   previewEffectLayerBlendMode: EffectLayerBlendModePreview | null;
   selectedLayerId: string;
   addEffectLayer: (type: EffectLayerType) => void;
@@ -83,6 +97,7 @@ export type LayersSlice = {
   selectEffectLayer: (id: string) => void;
   selectFieldGradientAnchor: (id: string) => void;
   selectGradientStop: (id: string) => void;
+  clearImage: () => void;
   setEffectLayerBlendMode: (id: string, blendMode: EffectLayerBlendMode) => void;
   setPreviewEffectLayerBlendMode: (layerId: string, blendMode: EffectLayerBlendMode) => void;
   setEffectLayerOpacity: (id: string, opacity: number, options?: HistoryUpdateOptions) => void;
@@ -92,6 +107,7 @@ export type LayersSlice = {
   setFieldGradientPower: (power: number, options?: HistoryUpdateOptions) => void;
   setGradientMode: (mode: GradientMode) => void;
   setGradientRotation: (rotation: number, options?: HistoryUpdateOptions) => void;
+  setImage: (image: ImageState) => void;
   toggleEffectLayerEnabled: (id: string) => void;
   updateFieldGradientAnchor: (
     id: string,
@@ -167,8 +183,21 @@ export function createDefaultFieldGradientState(): FieldGradientState {
   };
 }
 
+export function createDefaultImageState(): ImageState {
+  return {
+    byteSize: 0,
+    fileName: "",
+    height: 0,
+    loadedAt: null,
+    mimeType: "",
+    src: null,
+    width: 0,
+  };
+}
+
 const initialGradient = createDefaultGradientState();
 const initialFieldGradient = createDefaultFieldGradientState();
+const initialImage = createDefaultImageState();
 const initialEffectLayers: EffectLayer[] = [
   {
     blendMode: "normal",
@@ -191,15 +220,24 @@ const initialEffectLayers: EffectLayer[] = [
 ];
 
 function cloneEffectLayer(layer: EffectLayer): EffectLayer {
-  return layer.type === "gradient"
-    ? {
-        ...layer,
-        params: cloneGradientState(layer.params),
-      }
-    : {
-        ...layer,
-        params: cloneFieldGradientState(layer.params),
-      };
+  if (layer.type === "gradient") {
+    return {
+      ...layer,
+      params: cloneGradientState(layer.params),
+    };
+  }
+
+  if (layer.type === "field-gradient") {
+    return {
+      ...layer,
+      params: cloneFieldGradientState(layer.params),
+    };
+  }
+
+  return {
+    ...layer,
+    params: cloneImageState(layer.params),
+  };
 }
 
 function captureLayersHistorySnapshot(state: LayersSlice): LayersHistorySnapshot {
@@ -207,6 +245,7 @@ function captureLayersHistorySnapshot(state: LayersSlice): LayersHistorySnapshot
     effectLayers: state.effectLayers.map(cloneEffectLayer),
     fieldGradient: cloneFieldGradientState(state.fieldGradient),
     gradient: cloneGradientState(state.gradient),
+    image: cloneImageState(state.image),
     selectedLayerId: state.selectedLayerId,
   };
 }
@@ -216,6 +255,7 @@ function restoreLayersHistorySnapshot(snapshot: LayersHistorySnapshot) {
     effectLayers: snapshot.effectLayers.map(cloneEffectLayer),
     fieldGradient: cloneFieldGradientState(snapshot.fieldGradient),
     gradient: cloneGradientState(snapshot.gradient),
+    image: cloneImageState(snapshot.image),
     selectedLayerId: snapshot.selectedLayerId,
   };
 }
@@ -255,28 +295,56 @@ function syncSelectedFieldGradientLayer(
   );
 }
 
+function syncSelectedImageLayer(state: LayersSlice, image: ImageState) {
+  const selectedLayer = state.effectLayers.find((layer) => layer.id === state.selectedLayerId);
+
+  if (selectedLayer?.type !== "image") {
+    return state.effectLayers;
+  }
+
+  return state.effectLayers.map((layer) =>
+    layer.id === selectedLayer.id && layer.type === "image"
+      ? { ...layer, params: cloneImageState(image) }
+      : layer
+  );
+}
+
 function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
   const id = `layer-${type}-${Date.now()}-${index}`;
 
-  return type === "gradient"
-    ? {
-        blendMode: "normal",
-        enabled: true,
-        id,
-        name: gradientLayerAdapter.getDefaultName(index),
-        opacity: 100,
-        params: createDefaultGradientState(),
-        type,
-      }
-    : {
-        blendMode: "normal",
-        enabled: true,
-        id,
-        name: fieldGradientLayerAdapter.getDefaultName(index),
-        opacity: 100,
-        params: createDefaultFieldGradientState(),
-        type,
-      };
+  if (type === "gradient") {
+    return {
+      blendMode: "normal",
+      enabled: true,
+      id,
+      name: gradientLayerAdapter.getDefaultName(index),
+      opacity: 100,
+      params: createDefaultGradientState(),
+      type,
+    };
+  }
+
+  if (type === "field-gradient") {
+    return {
+      blendMode: "normal",
+      enabled: true,
+      id,
+      name: fieldGradientLayerAdapter.getDefaultName(index),
+      opacity: 100,
+      params: createDefaultFieldGradientState(),
+      type,
+    };
+  }
+
+  return {
+    blendMode: "normal",
+    enabled: true,
+    id,
+    name: imageLayerAdapter.getDefaultName(index),
+    opacity: 100,
+    params: createDefaultImageState(),
+    type,
+  };
 }
 
 export const layersHistoryParticipant: HistoryParticipant<WorkspaceStore> = {
@@ -294,6 +362,7 @@ export const createLayersSlice: StateCreator<
   effectLayers: initialEffectLayers,
   fieldGradient: initialFieldGradient,
   gradient: initialGradient,
+  image: initialImage,
   previewEffectLayerBlendMode: null,
   selectedLayerId: INITIAL_GRADIENT_LAYER_ID,
   addEffectLayer: (type) =>
@@ -307,7 +376,9 @@ export const createLayersSlice: StateCreator<
         ...getHistoryPatch(state),
         ...(nextLayer.type === "gradient"
           ? { gradient: cloneGradientState(nextLayer.params) }
-          : { fieldGradient: cloneFieldGradientState(nextLayer.params) }),
+          : nextLayer.type === "field-gradient"
+            ? { fieldGradient: cloneFieldGradientState(nextLayer.params) }
+            : { image: cloneImageState(nextLayer.params) }),
         previewEffectLayerBlendMode: null,
       };
     }),
@@ -388,7 +459,9 @@ export const createLayersSlice: StateCreator<
         selectedLayerId: selectedLayer.id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
-          : { fieldGradient: cloneFieldGradientState(selectedLayer.params) }),
+          : selectedLayer.type === "field-gradient"
+            ? { fieldGradient: cloneFieldGradientState(selectedLayer.params) }
+            : { image: cloneImageState(selectedLayer.params) }),
       };
     }),
   deleteSelectedEffectLayer: () =>
@@ -422,7 +495,9 @@ export const createLayersSlice: StateCreator<
         selectedLayerId: selectedLayer.id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
-          : { fieldGradient: cloneFieldGradientState(selectedLayer.params) }),
+          : selectedLayer.type === "field-gradient"
+            ? { fieldGradient: cloneFieldGradientState(selectedLayer.params) }
+            : { image: cloneImageState(selectedLayer.params) }),
       };
     }),
   randomizeFieldGradient: () =>
@@ -552,7 +627,9 @@ export const createLayersSlice: StateCreator<
         selectedLayerId: id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
-          : { fieldGradient: cloneFieldGradientState(selectedLayer.params) }),
+          : selectedLayer.type === "field-gradient"
+            ? { fieldGradient: cloneFieldGradientState(selectedLayer.params) }
+            : { image: cloneImageState(selectedLayer.params) }),
       };
     }),
   selectFieldGradientAnchor: (id) =>
@@ -577,6 +654,20 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedGradientLayer(state, gradient),
         gradient,
+      };
+    }),
+  clearImage: () =>
+    set((state) => {
+      const image = createDefaultImageState();
+
+      if (!state.image.src) {
+        return state;
+      }
+
+      return {
+        effectLayers: syncSelectedImageLayer(state, image),
+        image,
+        ...getHistoryPatch(state),
       };
     }),
   setEffectLayerBlendMode: (id, blendMode) =>
@@ -740,6 +831,12 @@ export const createLayersSlice: StateCreator<
         ...getHistoryPatch(state, options),
       };
     }),
+  setImage: (image) =>
+    set((state) => ({
+      effectLayers: syncSelectedImageLayer(state, image),
+      image: cloneImageState(image),
+      ...getHistoryPatch(state),
+    })),
   toggleEffectLayerEnabled: (id) =>
     set((state) => {
       if (!state.effectLayers.some((layer) => layer.id === id)) {

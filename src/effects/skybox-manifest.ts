@@ -9,7 +9,11 @@ import type { EffectLayerBlendModePreview } from "@/store/modules/layers";
 function layerToManifestLayer(
   layer: EffectLayer,
   previewBlendMode?: EffectLayerBlendModePreview | null
-): SkyboxManifestLayer {
+): SkyboxManifestLayer | null {
+  if (layer.type === "image") {
+    return null;
+  }
+
   const blendMode =
     previewBlendMode?.layerId === layer.id ? previewBlendMode.blendMode : layer.blendMode;
 
@@ -63,7 +67,11 @@ export function createSkyboxManifest(
       order: "bottom-to-top",
     },
     geometry,
-    nodes: effectLayers.map((layer) => layerToManifestLayer(layer, previewBlendMode)),
+    nodes: effectLayers.flatMap((layer) => {
+      const manifestLayer = layerToManifestLayer(layer, previewBlendMode);
+
+      return manifestLayer ? [manifestLayer] : [];
+    }),
     version: 2,
   };
 }

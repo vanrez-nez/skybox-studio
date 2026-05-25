@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { Eye, EyeOff, Palette, Sparkles, Trash2 } from "lucide-react";
+import { Eye, EyeOff, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -39,7 +39,15 @@ import { useWorkspaceStore } from "@/store/app";
 
 const LAYER_DRAG_TYPE = "effect-layer";
 function getLayerIcon(type: EffectLayerType) {
-  return type === "gradient" ? Palette : Sparkles;
+  if (type === "gradient") {
+    return Palette;
+  }
+
+  if (type === "field-gradient") {
+    return Sparkles;
+  }
+
+  return ImagePlus;
 }
 
 function isLayerDragData(data: Record<string, unknown>): data is {
@@ -485,6 +493,15 @@ export function LayersWidget() {
             variant="ghost"
           >
             <Sparkles />
+          </Button>
+          <Button
+            aria-label="Add image layer"
+            onClick={() => addEffectLayer("image")}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            <ImagePlus />
           </Button>
         </div>
         <Button

@@ -1,5 +1,4 @@
-import { bakeSkyboxManifestData } from "@/processes/texture-baking-core";
-import type { SkyboxManifestV1 } from "@/runtime";
+import { bakeSkyboxImageData, type SkyboxManifestV1 } from "@/runtime/index";
 
 export type TextureBakeWorkerRequest = {
   id: number;
@@ -22,7 +21,7 @@ type TextureBakeWorkerScope = {
 const workerSelf = self as unknown as TextureBakeWorkerScope;
 
 workerSelf.onmessage = (event: MessageEvent<TextureBakeWorkerRequest>) => {
-  const bakedImage = bakeSkyboxManifestData(event.data.manifest, {
+  const bakedImage = bakeSkyboxImageData(event.data.manifest, {
     width: event.data.width,
   });
   const response: TextureBakeWorkerResponse = {

@@ -1,5 +1,5 @@
 import type { EffectLayer } from "@/effects/effect-layer";
-import type { SkyboxManifestLayer, SkyboxManifestV1 } from "@/runtime";
+import type { SkyboxManifestLayer, SkyboxManifestV1 } from "@/runtime/index";
 import type { EffectLayerBlendModePreview } from "@/store/modules/layers";
 
 function layerToManifestLayer(

@@ -12,7 +12,7 @@ import { useWorkspaceStore } from "@/store/app";
 import type { SceneRenderMode, WorkspaceView } from "@/store/modules/scene";
 import { RotationGizmo } from "@/components/workspace/RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
-import { Skybox, type SkyboxManifestV1 } from "@/runtime";
+import { Skybox, type SkyboxManifestV1 } from "@/runtime/index";
 
 type ThreeWorkspaceSceneProps = {
   mode: WorkspaceView;
@@ -99,7 +99,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     let disposed = false;
     let rendererReady = false;
     const skyboxTexture = createTextureBakingSkyboxTexture();
-    const liveSkybox = new Skybox().fromManifest(skyboxManifest).load();
+    const liveSkybox = new Skybox().setRenderer(renderer).fromManifest(skyboxManifest).load();
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     const pointerState = {
       id: -1,

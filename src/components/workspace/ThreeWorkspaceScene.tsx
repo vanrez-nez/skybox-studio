@@ -12,7 +12,11 @@ import { useWorkspaceStore } from "@/store/app";
 import type { SceneRenderMode, WorkspaceView } from "@/store/modules/scene";
 import { RotationGizmo } from "@/components/workspace/RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
-import { Skybox, type SkyboxManifestV1 } from "@/runtime/index";
+import {
+  createSkyboxWireGeometry,
+  Skybox,
+  type SkyboxManifest,
+} from "@/runtime/index";
 
 type ThreeWorkspaceSceneProps = {
   mode: WorkspaceView;
@@ -41,7 +45,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const skyboxTextureRef = useRef<BakedSkyboxTexture | null>(null);
   const setSkyGeometryVisibleRef = useRef<((visible: boolean) => void) | null>(null);
   const updateSkyboxRef = useRef<
-    ((nextManifest: SkyboxManifestV1, nextRenderMode: SceneRenderMode) => void) | null
+    ((nextManifest: SkyboxManifest, nextRenderMode: SceneRenderMode) => void) | null
   >(null);
   const lookAtAxisDirectionRef = useRef<((direction: VectorTuple) => void) | null>(null);
   const resetOrientationRef = useRef<(() => void) | null>(null);
@@ -54,11 +58,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     (state) => state.previewEffectLayerBlendMode
   );
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
+  const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
   const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
   const skyboxManifest = useMemo(
-    () => createSkyboxManifest(effectLayers, previewEffectLayerBlendMode),
-    [effectLayers, previewEffectLayerBlendMode]
+    () => createSkyboxManifest(effectLayers, previewEffectLayerBlendMode, { type: skyGeometryType }),
+    [effectLayers, previewEffectLayerBlendMode, skyGeometryType]
   );
 
   const handleGizmoAxisSelect = useCallback((direction: VectorTuple) => {
@@ -102,12 +107,15 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     let bakeWorker: Worker | null = null;
     let latestBakeRequestId = 0;
     let currentRenderMode: SceneRenderMode = sceneRenderMode;
+    let currentSkyGeometryType = skyboxManifest.version === 2
+      ? skyboxManifest.geometry?.type ?? "box"
+      : "box";
     let disposed = false;
     let rendererReady = false;
     const skyboxTexture = createTextureBakingSkyboxTexture();
     const liveSkybox = new Skybox().setRenderer(renderer).fromManifest(skyboxManifest).load();
     const skyGeometry = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      createSkyboxWireGeometry({ type: currentSkyGeometryType }),
       new THREE.LineBasicMaterial({
         color: 0xffffff,
         depthTest: false,
@@ -153,6 +161,23 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       render();
     };
 
+    const syncSkyGeometry = (nextManifest: SkyboxManifest) => {
+      const nextSkyGeometryType = nextManifest.version === 2
+        ? nextManifest.geometry?.type ?? "box"
+        : "box";
+
+      if (nextSkyGeometryType === currentSkyGeometryType) {
+        return;
+      }
+
+      const previousGeometry = skyGeometry.geometry;
+
+      skyGeometry.geometry = createSkyboxWireGeometry({ type: nextSkyGeometryType });
+      previousGeometry.dispose();
+      currentSkyGeometryType = nextSkyGeometryType;
+      render();
+    };
+
     const syncGizmoOrientation = () => {
       setGizmoOrientation(quaternionToTuple(camera.quaternion));
     };
@@ -181,9 +206,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      const currentTexture = skyboxTextureRef.current;
+      const previousTexture = skyboxTextureRef.current;
 
-      if (!currentTexture) {
+      if (!previousTexture) {
         return;
       }
 
@@ -193,9 +218,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         width: event.data.width,
       });
 
-      scene.background = nextTexture;
+      liveSkybox.setBakedTexture(nextTexture);
+      if (!liveSkybox.parent) {
+        scene.add(liveSkybox);
+      }
       skyboxTextureRef.current = nextTexture;
-      currentTexture.dispose();
+      previousTexture.dispose();
       render();
     };
 
@@ -217,23 +245,24 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       bakeWorker = null;
     };
 
-    const sendSkyboxBake = debounce((id: number, nextManifest: SkyboxManifestV1) => {
+    const sendSkyboxBake = debounce((id: number, nextManifest: SkyboxManifest) => {
       getBakeWorker().postMessage({
         id,
         manifest: nextManifest,
       });
     }, SKYBOX_BAKE_DEBOUNCE_MS);
 
-    const requestSkyboxBake = (nextManifest: SkyboxManifestV1) => {
+    const requestSkyboxBake = (nextManifest: SkyboxManifest) => {
       latestBakeRequestId += 1;
       sendSkyboxBake(latestBakeRequestId, nextManifest);
     };
 
     const applySceneRenderMode = (
-      nextManifest: SkyboxManifestV1,
+      nextManifest: SkyboxManifest,
       nextRenderMode: SceneRenderMode
     ) => {
       currentRenderMode = nextRenderMode;
+      syncSkyGeometry(nextManifest);
 
       if (nextRenderMode === "live") {
         sendSkyboxBake.cancel();
@@ -249,11 +278,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      if (liveSkybox.parent) {
-        scene.remove(liveSkybox);
+      const currentTexture = skyboxTextureRef.current;
+
+      if (currentTexture) {
+        liveSkybox.setBakedTexture(currentTexture);
       }
 
-      scene.background = skyboxTextureRef.current;
+      if (!liveSkybox.parent) {
+        scene.add(liveSkybox);
+      }
+
+      scene.background = null;
       requestSkyboxBake(nextManifest);
       render();
     };
@@ -496,15 +531,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       liveSkybox.dispose();
       skyGeometry.geometry.dispose();
       skyGeometry.material.dispose();
-      const currentSkyboxTexture = scene.background;
-
-      if (currentSkyboxTexture instanceof THREE.Texture) {
-        currentSkyboxTexture.dispose();
-      }
-
-      if (referencedSkyboxTexture && referencedSkyboxTexture !== currentSkyboxTexture) {
-        referencedSkyboxTexture.dispose();
-      }
+      referencedSkyboxTexture?.dispose();
 
       renderer.dispose();
     };

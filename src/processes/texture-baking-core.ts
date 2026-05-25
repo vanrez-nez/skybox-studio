@@ -3,7 +3,7 @@ import {
   bakeSkyboxImageData,
   DEFAULT_BAKE_WIDTH,
   type BakedSkyboxImageData,
-  type SkyboxManifestV1,
+  type SkyboxManifest,
 } from "@/runtime/index";
 
 export { DEFAULT_BAKE_WIDTH };
@@ -11,7 +11,7 @@ export { DEFAULT_BAKE_WIDTH };
 export type BakedGradientImage = BakedSkyboxImageData;
 
 export function bakeSkyboxManifestData(
-  manifest: SkyboxManifestV1,
+  manifest: SkyboxManifest,
   options: { width?: number } = {}
 ): BakedGradientImage {
   return bakeSkyboxImageData(manifest, options);

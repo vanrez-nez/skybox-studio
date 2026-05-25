@@ -8,13 +8,15 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Widget } from "@/components/widgets/Widget";
 import { useWorkspaceStore } from "@/store/app";
-import type { SceneRenderMode } from "@/store/modules/scene";
+import type { SceneRenderMode, SkyGeometryType } from "@/store/modules/scene";
 
 export function SceneWidget() {
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const setSceneRenderMode = useWorkspaceStore((state) => state.setSceneRenderMode);
+  const setSkyGeometryType = useWorkspaceStore((state) => state.setSkyGeometryType);
   const setShowOrientationGizmo = useWorkspaceStore((state) => state.setShowOrientationGizmo);
   const setShowSkyGeometry = useWorkspaceStore((state) => state.setShowSkyGeometry);
+  const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
   const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
 
@@ -38,6 +40,26 @@ export function SceneWidget() {
           onCheckedChange={setShowSkyGeometry}
           size="sm"
         />
+      </div>
+
+      <div className="widget-field widget-field-mode">
+        <span className="text-xs">Sky geometry</span>
+        <Select
+          onValueChange={(value) => setSkyGeometryType(value as SkyGeometryType)}
+          value={skyGeometryType}
+        >
+          <SelectTrigger aria-label="Sky geometry" className="h-8 w-full bg-background text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem className="text-xs" value="box">
+              Box
+            </SelectItem>
+            <SelectItem className="text-xs" value="sphere">
+              Spherical
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="widget-field widget-field-mode">

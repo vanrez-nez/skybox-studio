@@ -1,8 +1,8 @@
-import { bakeSkyboxImageData, type SkyboxManifestV1 } from "@/runtime/index";
+import { bakeSkyboxImageData, type SkyboxManifest } from "@/runtime/index";
 
 export type TextureBakeWorkerRequest = {
   id: number;
-  manifest: SkyboxManifestV1;
+  manifest: SkyboxManifest;
   width?: number;
 };
 

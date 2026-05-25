@@ -75,6 +75,7 @@ export type LayersSlice = {
   selectEffectLayer: (id: string) => void;
   selectFieldGradientAnchor: (id: string) => void;
   selectGradientStop: (id: string) => void;
+  setEffectLayerOpacity: (id: string, opacity: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientAmplitude: (amplitude: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientFrequency: (frequency: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientMode: (mode: FieldGradientMode) => void;
@@ -115,8 +116,8 @@ function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
-function clampUnit(value: number) {
-  return Math.min(1, Math.max(0, value));
+function wrapUnit(value: number) {
+  return ((value % 1) + 1) % 1;
 }
 
 function clampRange(value: number, min: number, max: number) {
@@ -167,6 +168,7 @@ const initialEffectLayers: EffectLayer[] = [
     enabled: true,
     id: INITIAL_GRADIENT_LAYER_ID,
     name: "Gradient",
+    opacity: 100,
     params: cloneGradientState(initialGradient),
     type: "gradient",
   },
@@ -174,6 +176,7 @@ const initialEffectLayers: EffectLayer[] = [
     enabled: true,
     id: INITIAL_FIELD_GRADIENT_LAYER_ID,
     name: "Field Gradient",
+    opacity: 100,
     params: cloneFieldGradientState(initialFieldGradient),
     type: "field-gradient",
   },
@@ -252,6 +255,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
         enabled: true,
         id,
         name: gradientLayerAdapter.getDefaultName(index),
+        opacity: 100,
         params: createDefaultGradientState(),
         type,
       }
@@ -259,6 +263,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
         enabled: true,
         id,
         name: fieldGradientLayerAdapter.getDefaultName(index),
+        opacity: 100,
         params: createDefaultFieldGradientState(),
         type,
       };
@@ -303,8 +308,8 @@ export const createLayersSlice: StateCreator<
       const nextAnchor = {
         ...anchor,
         id: `field-${Date.now()}`,
-        x: clampUnit(anchor.x),
-        y: clampUnit(anchor.y),
+        x: wrapUnit(anchor.x),
+        y: wrapUnit(anchor.y),
       };
 
       const fieldGradient = {
@@ -555,6 +560,22 @@ export const createLayersSlice: StateCreator<
         gradient,
       };
     }),
+  setEffectLayerOpacity: (id, opacity, options) =>
+    set((state) => {
+      const nextOpacity = clampPercent(opacity);
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
+
+      if (!layer || layer.opacity === nextOpacity) {
+        return state;
+      }
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === id ? { ...effectLayer, opacity: nextOpacity } : effectLayer
+        ),
+        ...getHistoryPatch(state, options),
+      };
+    }),
   setFieldGradientAmplitude: (amplitude, options) =>
     set((state) => {
       const nextAmplitude = clampRange(amplitude, 0, 0.6);
@@ -691,8 +712,8 @@ export const createLayersSlice: StateCreator<
             ? {
                 ...anchor,
                 ...update,
-                x: update.x === undefined ? anchor.x : clampUnit(update.x),
-                y: update.y === undefined ? anchor.y : clampUnit(update.y),
+                x: update.x === undefined ? anchor.x : wrapUnit(update.x),
+                y: update.y === undefined ? anchor.y : wrapUnit(update.y),
               }
             : anchor
         ),

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import debounce from "lodash/debounce";
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 
 import {
   type BakedSkyboxTexture,
@@ -9,9 +9,10 @@ import {
 import type { TextureBakeWorkerResponse } from "@/processes/texture-baking.worker";
 import TextureBakingWorker from "@/processes/texture-baking.worker?worker";
 import { useWorkspaceStore } from "@/store/app";
-import type { GradientState } from "@/store/modules/layers";
-import type { WorkspaceView } from "@/store/modules/scene";
+import type { SceneRenderMode, WorkspaceView } from "@/store/modules/scene";
 import { RotationGizmo } from "@/components/workspace/RotationGizmo";
+import { createSkyboxManifest } from "@/effects/skybox-manifest";
+import { Skybox, type SkyboxManifestV1 } from "@/runtime";
 
 type ThreeWorkspaceSceneProps = {
   mode: WorkspaceView;
@@ -38,15 +39,19 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderRef = useRef<(() => void) | null>(null);
   const skyboxTextureRef = useRef<BakedSkyboxTexture | null>(null);
-  const updateSkyboxRef = useRef<((nextGradient: GradientState) => void) | null>(null);
+  const updateSkyboxRef = useRef<
+    ((nextManifest: SkyboxManifestV1, nextRenderMode: SceneRenderMode) => void) | null
+  >(null);
   const lookAtAxisDirectionRef = useRef<((direction: VectorTuple) => void) | null>(null);
   const resetOrientationRef = useRef<(() => void) | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const [gizmoOrientation, setGizmoOrientation] = useState<QuaternionTuple>(() =>
     quaternionToTuple(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION))
   );
-  const gradient = useWorkspaceStore((state) => state.gradient);
+  const effectLayers = useWorkspaceStore((state) => state.effectLayers);
+  const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
+  const skyboxManifest = useMemo(() => createSkyboxManifest(effectLayers), [effectLayers]);
 
   const handleGizmoAxisSelect = useCallback((direction: VectorTuple) => {
     lookAtAxisDirectionRef.current?.(direction);
@@ -65,8 +70,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       return;
     }
 
-    updateSkyboxRef.current(gradient);
-  }, [gradient]);
+    updateSkyboxRef.current(skyboxManifest, sceneRenderMode);
+  }, [sceneRenderMode, skyboxManifest]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -76,17 +81,19 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       return;
     }
 
-    const renderer = new THREE.WebGLRenderer({
+    const renderer = new THREE.WebGPURenderer({
       antialias: true,
       canvas,
-      preserveDrawingBuffer: true,
     });
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    const bakeWorker = new TextureBakingWorker();
+    let bakeWorker: Worker | null = null;
     let latestBakeRequestId = 0;
+    let currentRenderMode: SceneRenderMode = sceneRenderMode;
     let disposed = false;
+    let rendererReady = false;
     const skyboxTexture = createTextureBakingSkyboxTexture();
+    const liveSkybox = new Skybox().fromManifest(skyboxManifest).load();
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     const pointerState = {
       id: -1,
@@ -96,16 +103,19 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       yaw: cameraRotation.y,
     };
 
-    scene.background = skyboxTexture;
     skyboxTextureRef.current = skyboxTexture;
     camera.position.set(0, 0, 0);
     camera.rotation.copy(cameraRotation);
     canvas.style.cursor = "grab";
     canvas.style.touchAction = "none";
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const render = () => {
+      if (!rendererReady || disposed) {
+        return;
+      }
+
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, canvas.width, canvas.height);
       renderer.render(scene, camera);
@@ -132,20 +142,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       animationFrameRef.current = null;
     };
 
-    const sendSkyboxBake = debounce((id: number, nextGradient: GradientState) => {
-      bakeWorker.postMessage({
-        gradient: nextGradient,
-        id,
-      });
-    }, SKYBOX_BAKE_DEBOUNCE_MS);
-
-    const requestSkyboxBake = (nextGradient: GradientState) => {
-      latestBakeRequestId += 1;
-      sendSkyboxBake(latestBakeRequestId, nextGradient);
-    };
-
-    bakeWorker.onmessage = (event: MessageEvent<TextureBakeWorkerResponse>) => {
-      if (disposed || event.data.id !== latestBakeRequestId) {
+    const handleBakeWorkerMessage = (event: MessageEvent<TextureBakeWorkerResponse>) => {
+      if (
+        disposed ||
+        currentRenderMode !== "texture-baked" ||
+        event.data.id !== latestBakeRequestId
+      ) {
         return;
       }
 
@@ -167,27 +169,89 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       render();
     };
 
-    updateSkyboxRef.current = requestSkyboxBake;
-    requestSkyboxBake(gradient);
+    const getBakeWorker = () => {
+      if (!bakeWorker) {
+        bakeWorker = new TextureBakingWorker();
+        bakeWorker.onmessage = handleBakeWorkerMessage;
+      }
 
-    const applyCameraRotation = () => {
-      cancelCameraAnimation();
-      cameraRotation.set(pointerState.pitch, pointerState.yaw, 0, "YXZ");
-      camera.rotation.copy(cameraRotation);
-      syncGizmoOrientation();
+      return bakeWorker;
+    };
+
+    const terminateBakeWorker = () => {
+      if (!bakeWorker) {
+        return;
+      }
+
+      bakeWorker.terminate();
+      bakeWorker = null;
+    };
+
+    const sendSkyboxBake = debounce((id: number, nextManifest: SkyboxManifestV1) => {
+      getBakeWorker().postMessage({
+        id,
+        manifest: nextManifest,
+      });
+    }, SKYBOX_BAKE_DEBOUNCE_MS);
+
+    const requestSkyboxBake = (nextManifest: SkyboxManifestV1) => {
+      latestBakeRequestId += 1;
+      sendSkyboxBake(latestBakeRequestId, nextManifest);
+    };
+
+    const applySceneRenderMode = (
+      nextManifest: SkyboxManifestV1,
+      nextRenderMode: SceneRenderMode
+    ) => {
+      currentRenderMode = nextRenderMode;
+
+      if (nextRenderMode === "live") {
+        sendSkyboxBake.cancel();
+        terminateBakeWorker();
+        scene.background = null;
+        liveSkybox.setManifest(nextManifest);
+
+        if (!liveSkybox.parent) {
+          scene.add(liveSkybox);
+        }
+
+        render();
+        return;
+      }
+
+      if (liveSkybox.parent) {
+        scene.remove(liveSkybox);
+      }
+
+      scene.background = skyboxTextureRef.current;
+      requestSkyboxBake(nextManifest);
       render();
     };
 
-    const rotateCameraFromPointerDelta = (deltaX: number, deltaY: number) => {
-      const pitchLimit = Math.PI / 2 - 0.01;
+    updateSkyboxRef.current = applySceneRenderMode;
 
-      pointerState.yaw -= deltaX * 0.006;
-      pointerState.pitch = THREE.MathUtils.clamp(
-        pointerState.pitch - deltaY * 0.006,
-        -pitchLimit,
-        pitchLimit
+    const rotateCameraFromPointerDelta = (deltaX: number, deltaY: number) => {
+      cancelCameraAnimation();
+
+      const yawQuaternion = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        -deltaX * 0.006
       );
-      applyCameraRotation();
+
+      camera.quaternion.premultiply(yawQuaternion);
+
+      const pitchAxis = new THREE.Vector3(1, 0, 0)
+        .applyQuaternion(camera.quaternion)
+        .normalize();
+      const pitchQuaternion = new THREE.Quaternion().setFromAxisAngle(
+        pitchAxis,
+        -deltaY * 0.006
+      );
+
+      camera.quaternion.premultiply(pitchQuaternion);
+      syncPointerRotation();
+      syncGizmoOrientation();
+      render();
     };
 
     const getAxisQuaternion = (direction: VectorTuple) => {
@@ -283,6 +347,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
       }
+
+      if (document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+      }
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -293,6 +361,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       pointerState.previousY = event.clientY;
       canvas.style.cursor = "grabbing";
       canvas.setPointerCapture(event.pointerId);
+      canvas.requestPointerLock?.();
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -302,6 +371,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       event.preventDefault();
+      const isPointerLocked = document.pointerLockElement === canvas;
+
+      if (isPointerLocked) {
+        return;
+      }
+
       const deltaX = event.clientX - pointerState.previousX;
       const deltaY = event.clientY - pointerState.previousY;
 
@@ -310,11 +385,35 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       rotateCameraFromPointerDelta(deltaX, deltaY);
     };
 
+    const onLockedMouseMove = (event: MouseEvent) => {
+      if (document.pointerLockElement !== canvas || pointerState.id === -1) {
+        return;
+      }
+
+      event.preventDefault();
+      rotateCameraFromPointerDelta(event.movementX, event.movementY);
+    };
+
+    const onLockedMouseUp = () => {
+      if (pointerState.id === -1) {
+        return;
+      }
+
+      pointerState.id = -1;
+      canvas.style.cursor = "grab";
+
+      if (document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+      }
+    };
+
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", releasePointer);
     canvas.addEventListener("pointercancel", releasePointer);
     canvas.addEventListener("lostpointercapture", releasePointer);
+    document.addEventListener("mousemove", onLockedMouseMove);
+    document.addEventListener("mouseup", onLockedMouseUp);
 
     const resize = () => {
       const { height, width } = container.getBoundingClientRect();
@@ -330,7 +429,16 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const resizeObserver = new ResizeObserver(resize);
 
     resizeObserver.observe(container);
-    resize();
+
+    void renderer.init().then(() => {
+      if (disposed) {
+        return;
+      }
+
+      rendererReady = true;
+      applySceneRenderMode(skyboxManifest, sceneRenderMode);
+      resize();
+    });
 
     return () => {
       disposed = true;
@@ -339,19 +447,30 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       lookAtAxisDirectionRef.current = null;
       resetOrientationRef.current = null;
       cancelCameraAnimation();
+      const referencedSkyboxTexture = skyboxTextureRef.current;
       skyboxTextureRef.current = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", releasePointer);
       canvas.removeEventListener("pointercancel", releasePointer);
       canvas.removeEventListener("lostpointercapture", releasePointer);
+      document.removeEventListener("mousemove", onLockedMouseMove);
+      document.removeEventListener("mouseup", onLockedMouseUp);
+      if (document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+      }
       resizeObserver.disconnect();
       sendSkyboxBake.cancel();
-      bakeWorker.terminate();
+      terminateBakeWorker();
+      liveSkybox.dispose();
       const currentSkyboxTexture = scene.background;
 
       if (currentSkyboxTexture instanceof THREE.Texture) {
         currentSkyboxTexture.dispose();
+      }
+
+      if (referencedSkyboxTexture && referencedSkyboxTexture !== currentSkyboxTexture) {
+        referencedSkyboxTexture.dispose();
       }
 
       renderer.dispose();

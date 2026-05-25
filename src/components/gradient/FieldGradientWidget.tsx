@@ -49,6 +49,10 @@ function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
 }
 
+function wrapUnit(value: number) {
+  return ((value % 1) + 1) % 1;
+}
+
 function parseHexColor(color: string): Rgb {
   const hexColor = color.replace("#", "");
 
@@ -67,17 +71,28 @@ function formatFieldValue(value: number) {
 
 function sampleWarpedPoint(x: number, y: number, amplitude: number, frequency: number) {
   if (amplitude <= 0) {
-    return { x, y };
+    return { x: wrapUnit(x), y: wrapUnit(y) };
   }
 
+  const safeFrequency = Math.max(0.0001, frequency);
   const scale = amplitude * 0.16;
-  const nx = Math.sin((y * frequency + 0.23) * TWO_PI) * Math.cos((x * frequency + 0.41) * TWO_PI);
-  const ny = Math.cos((x * frequency + 0.17) * TWO_PI) * Math.sin((y * frequency + 0.37) * TWO_PI);
+  const nextX =
+    Math.sin((y * safeFrequency + 0.23) * TWO_PI) *
+    Math.cos((x * safeFrequency + 0.41) * TWO_PI);
+  const nextY =
+    Math.cos((x * safeFrequency + 0.17) * TWO_PI) *
+    Math.sin((y * safeFrequency + 0.37) * TWO_PI);
 
   return {
-    x: clamp(x + nx * scale),
-    y: clamp(y + ny * scale),
+    x: wrapUnit(x + nextX * scale),
+    y: wrapUnit(y + nextY * scale),
   };
+}
+
+function wrappedAxisDistance(firstValue: number, secondValue: number) {
+  const distance = Math.abs(firstValue - secondValue);
+
+  return Math.min(distance, 1 - distance);
 }
 
 function sampleFieldColor(
@@ -98,7 +113,10 @@ function sampleFieldColor(
   let weightSum = 0;
 
   anchors.forEach((anchor) => {
-    const distance = Math.hypot(point.x - anchor.x, point.y - anchor.y);
+    const distance = Math.hypot(
+      wrappedAxisDistance(point.x, anchor.x),
+      wrappedAxisDistance(point.y, anchor.y)
+    );
     const weight =
       fieldGradient.mode === "inverse-distance"
         ? 1 / (distance + 0.0005) ** fieldGradient.power
@@ -203,8 +221,8 @@ function getAnchorPositionFromPointer(
   const rect = preview.getBoundingClientRect();
 
   return {
-    x: clamp((event.clientX - rect.left) / rect.width),
-    y: clamp((event.clientY - rect.top) / rect.height),
+    x: wrapUnit((event.clientX - rect.left) / rect.width),
+    y: wrapUnit((event.clientY - rect.top) / rect.height),
   };
 }
 

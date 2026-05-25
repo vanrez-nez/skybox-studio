@@ -20,15 +20,26 @@ export type WidgetPosition = {
   y: number;
 };
 
+export type WidgetOwnerRect = {
+  bottom: number;
+  height: number;
+  left: number;
+  right: number;
+  top: number;
+  width: number;
+};
+
 type WidgetProps = Omit<ComponentPropsWithoutRef<"section">, "title"> & {
   collapsed?: boolean;
   contentClassName?: string;
   defaultCollapsed?: boolean;
+  floatingOwnerRect?: WidgetOwnerRect;
   floatingPosition?: WidgetPosition;
   ignoreFloatingDismissSelector?: string;
   onCollapsedChange?: (collapsed: boolean) => void;
   onFloatingDismiss?: () => void;
-  title: ReactNode;
+  showFloatingOwnerCallout?: boolean;
+  title?: ReactNode;
   variant?: WidgetVariant;
   viewportPadding?: number;
 };
@@ -46,10 +57,12 @@ export function Widget({
   collapsed,
   contentClassName,
   defaultCollapsed = false,
+  floatingOwnerRect,
   floatingPosition = DEFAULT_FLOATING_POSITION,
   ignoreFloatingDismissSelector,
   onCollapsedChange,
   onFloatingDismiss,
+  showFloatingOwnerCallout = false,
   title,
   variant = "default",
   viewportPadding = 12,
@@ -61,6 +74,8 @@ export function Widget({
   const [resolvedPosition, setResolvedPosition] = useState(floatingPosition);
   const isFloating = variant === "floating";
   const isCollapsed = isFloating ? false : collapsed ?? internalCollapsed;
+  const hasHeader = !isFloating || Boolean(title);
+  const [floatingWidgetWidth, setFloatingWidgetWidth] = useState(0);
   const [shouldRenderContent, setShouldRenderContent] = useState(!isCollapsed);
   const [isContentOpaque, setIsContentOpaque] = useState(!isCollapsed);
   const previousCollapsedRef = useRef(isCollapsed);
@@ -79,6 +94,7 @@ export function Widget({
     }
 
     const rect = widgetRef.current.getBoundingClientRect();
+    setFloatingWidgetWidth(rect.width);
     const maxX = Math.max(viewportPadding, window.innerWidth - rect.width - viewportPadding);
     const maxY = Math.max(viewportPadding, window.innerHeight - rect.height - viewportPadding);
     const nextPosition = {
@@ -92,6 +108,15 @@ export function Widget({
         : nextPosition
     );
   }, [floatingPosition.x, floatingPosition.y, isFloating, viewportPadding]);
+
+  const ownerCalloutLeft =
+    isFloating && floatingOwnerRect
+      ? clamp(
+          floatingOwnerRect.left + floatingOwnerRect.width / 2 - resolvedPosition.x,
+          10,
+          Math.max(10, floatingWidgetWidth - 10)
+        )
+      : 0;
 
   useLayoutEffect(() => {
     if (!isFloating || !widgetRef.current) {
@@ -188,10 +213,10 @@ export function Widget({
     <section
       ref={widgetRef}
       className={cn(
-        "select-none overflow-hidden border bg-card text-xs text-card-foreground [&_button]:text-xs [&_input]:text-xs [&_select]:text-xs",
+        "select-none border bg-card text-xs text-card-foreground [&_button]:text-xs [&_input]:text-xs [&_select]:text-xs",
         isFloating
           ? "floating-widget-surface fixed z-50 rounded-md shadow-2xl"
-          : "widget-panel w-full rounded-md shadow-none",
+          : "widget-panel w-full overflow-hidden rounded-md shadow-none",
         className
       )}
       style={
@@ -205,39 +230,48 @@ export function Widget({
       }
       {...props}
     >
-      <header
-        className={cn(
-          "flex items-center gap-2 px-3",
-          !isCollapsed && "border-b",
-          isFloating ? "h-7" : "h-9"
-        )}
-      >
-        {!isFloating ? (
-          <Button
-            aria-label={isCollapsed ? "Expand widget" : "Collapse widget"}
-            onClick={() => setCollapsed(!isCollapsed)}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            {isCollapsed ? <ChevronRight /> : <ChevronDown />}
-          </Button>
-        ) : null}
-        {isFloating ? (
-          <div className="min-w-0 flex-1 truncate text-xs font-medium">
-            {title}
-          </div>
-        ) : (
-          <button
-            aria-expanded={!isCollapsed}
-            className="min-w-0 flex-1 truncate text-left text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            onClick={() => setCollapsed(!isCollapsed)}
-            type="button"
-          >
-            {title}
-          </button>
-        )}
-      </header>
+      {isFloating && showFloatingOwnerCallout && floatingOwnerRect ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-1 size-2 rotate-45 border-t border-l bg-card"
+          style={{ left: ownerCalloutLeft }}
+        />
+      ) : null}
+      {hasHeader ? (
+        <header
+          className={cn(
+            "flex items-center gap-2 px-3",
+            !isCollapsed && "border-b",
+            isFloating ? "h-7" : "h-9"
+          )}
+        >
+          {!isFloating ? (
+            <Button
+              aria-label={isCollapsed ? "Expand widget" : "Collapse widget"}
+              onClick={() => setCollapsed(!isCollapsed)}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            >
+              {isCollapsed ? <ChevronRight /> : <ChevronDown />}
+            </Button>
+          ) : null}
+          {isFloating ? (
+            <div className="min-w-0 flex-1 truncate text-xs font-medium">
+              {title}
+            </div>
+          ) : (
+            <button
+              aria-expanded={!isCollapsed}
+              className="min-w-0 flex-1 truncate text-left text-xs font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              onClick={() => setCollapsed(!isCollapsed)}
+              type="button"
+            >
+              {title}
+            </button>
+          )}
+        </header>
+      ) : null}
       {isFloating ? (
         <div className={cn("min-h-16 p-3", contentClassName)}>{children}</div>
       ) : (

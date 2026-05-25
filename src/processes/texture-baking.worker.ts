@@ -1,9 +1,9 @@
-import { bakeDirectionSpaceGradientData } from "@/processes/texture-baking-core";
-import type { GradientState } from "@/store/modules/layers";
+import { bakeSkyboxManifestData } from "@/processes/texture-baking-core";
+import type { SkyboxManifestV1 } from "@/runtime";
 
 export type TextureBakeWorkerRequest = {
-  gradient: GradientState;
   id: number;
+  manifest: SkyboxManifestV1;
   width?: number;
 };
 
@@ -22,7 +22,7 @@ type TextureBakeWorkerScope = {
 const workerSelf = self as unknown as TextureBakeWorkerScope;
 
 workerSelf.onmessage = (event: MessageEvent<TextureBakeWorkerRequest>) => {
-  const bakedImage = bakeDirectionSpaceGradientData(event.data.gradient, {
+  const bakedImage = bakeSkyboxManifestData(event.data.manifest, {
     width: event.data.width,
   });
   const response: TextureBakeWorkerResponse = {

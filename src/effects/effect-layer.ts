@@ -17,6 +17,7 @@ export type SerializedEffectLayer = {
   enabled: boolean;
   id: string;
   name: string;
+  opacity?: number;
 };
 
 export type EffectLayer =
@@ -24,6 +25,7 @@ export type EffectLayer =
       enabled: boolean;
       id: string;
       name: string;
+      opacity: number;
       params: GradientState;
       type: "gradient";
     }
@@ -31,6 +33,7 @@ export type EffectLayer =
       enabled: boolean;
       id: string;
       name: string;
+      opacity: number;
       params: FieldGradientState;
       type: "field-gradient";
     };
@@ -79,6 +82,7 @@ export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer 
     enabled: layer.enabled,
     id: layer.id,
     name: layer.name,
+    opacity: layer.opacity,
   };
 }
 
@@ -88,6 +92,7 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
         enabled: serialized.enabled,
         id: serialized.id,
         name: serialized.name,
+        opacity: serialized.opacity ?? 100,
         params: gradientLayerAdapter.load(serialized.effect),
         type: "gradient",
       }
@@ -95,6 +100,7 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
         enabled: serialized.enabled,
         id: serialized.id,
         name: serialized.name,
+        opacity: serialized.opacity ?? 100,
         params: fieldGradientLayerAdapter.load(serialized.effect),
         type: "field-gradient",
       };

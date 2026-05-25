@@ -2,7 +2,11 @@ import { type MouseEvent, useEffect, useRef, useState } from "react";
 import Coloris from "@melloware/coloris";
 
 import { Button } from "@/components/ui/button";
-import { Widget, type WidgetPosition } from "@/components/widgets/Widget";
+import {
+  Widget,
+  type WidgetOwnerRect,
+  type WidgetPosition,
+} from "@/components/widgets/Widget";
 
 type FloatingColorPickerProps = {
   onChange: (color: string) => void;
@@ -12,6 +16,17 @@ type FloatingColorPickerProps = {
 };
 
 const DEFAULT_PICKER_POSITION: WidgetPosition = { x: 12, y: 12 };
+
+function rectToWidgetOwnerRect(rect: DOMRect): WidgetOwnerRect {
+  return {
+    bottom: rect.bottom,
+    height: rect.height,
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    width: rect.width,
+  };
+}
 
 function ColorisInlinePicker({
   onChange,
@@ -91,6 +106,7 @@ export function FloatingColorPicker({
   value,
 }: FloatingColorPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [pickerOwnerRect, setPickerOwnerRect] = useState<WidgetOwnerRect | null>(null);
   const [pickerPosition, setPickerPosition] = useState(DEFAULT_PICKER_POSITION);
 
   const togglePicker = (event: MouseEvent<HTMLButtonElement>) => {
@@ -102,6 +118,7 @@ export function FloatingColorPicker({
         x: triggerRect.left,
         y: triggerRect.bottom + 4,
       });
+      setPickerOwnerRect(rectToWidgetOwnerRect(triggerRect));
     } else {
       onChangeEnd?.();
     }
@@ -128,12 +145,14 @@ export function FloatingColorPicker({
         <Widget
           className="w-fit"
           contentClassName="min-h-0 p-0"
+          floatingOwnerRect={pickerOwnerRect ?? undefined}
           floatingPosition={pickerPosition}
           ignoreFloatingDismissSelector=".clr-picker"
           onFloatingDismiss={() => {
             onChangeEnd?.();
             setIsOpen(false);
           }}
+          showFloatingOwnerCallout
           title="Color"
           variant="floating"
         >

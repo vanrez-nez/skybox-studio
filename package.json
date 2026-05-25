@@ -13,6 +13,7 @@
     "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@melloware/coloris": "^0.25.0",
+    "@tanstack/hotkeys": "^0.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lodash": "^4.18.1",

@@ -6,12 +6,17 @@ import { Widget, type WidgetPosition } from "@/components/widgets/Widget";
 
 type FloatingColorPickerProps = {
   onChange: (color: string) => void;
+  onChangeEnd?: () => void;
+  onChangeStart?: () => void;
   value: string;
 };
 
 const DEFAULT_PICKER_POSITION: WidgetPosition = { x: 12, y: 12 };
 
-function ColorisInlinePicker({ onChange, value }: FloatingColorPickerProps) {
+function ColorisInlinePicker({
+  onChange,
+  value,
+}: Pick<FloatingColorPickerProps, "onChange" | "value">) {
   const inputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
@@ -79,7 +84,12 @@ function ColorisInlinePicker({ onChange, value }: FloatingColorPickerProps) {
   );
 }
 
-export function FloatingColorPicker({ onChange, value }: FloatingColorPickerProps) {
+export function FloatingColorPicker({
+  onChange,
+  onChangeEnd,
+  onChangeStart,
+  value,
+}: FloatingColorPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [pickerPosition, setPickerPosition] = useState(DEFAULT_PICKER_POSITION);
 
@@ -87,10 +97,13 @@ export function FloatingColorPicker({ onChange, value }: FloatingColorPickerProp
     const triggerRect = event.currentTarget.getBoundingClientRect();
 
     if (!isOpen) {
+      onChangeStart?.();
       setPickerPosition({
         x: triggerRect.left,
         y: triggerRect.bottom + 4,
       });
+    } else {
+      onChangeEnd?.();
     }
 
     setIsOpen((open) => !open);
@@ -117,7 +130,10 @@ export function FloatingColorPicker({ onChange, value }: FloatingColorPickerProp
           contentClassName="min-h-0 p-0"
           floatingPosition={pickerPosition}
           ignoreFloatingDismissSelector=".clr-picker"
-          onFloatingDismiss={() => setIsOpen(false)}
+          onFloatingDismiss={() => {
+            onChangeEnd?.();
+            setIsOpen(false);
+          }}
           title="Color"
           variant="floating"
         >

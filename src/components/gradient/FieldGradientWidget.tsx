@@ -36,6 +36,8 @@ type FieldSliderProps = {
   max: number;
   min: number;
   onChange: (value: number) => void;
+  onChangeEnd?: () => void;
+  onChangeStart?: () => void;
   step: number;
   value: number;
 };
@@ -163,7 +165,16 @@ function drawFieldPreview(
   context.putImageData(imageData, 0, 0);
 }
 
-function FieldSlider({ label, max, min, onChange, step, value }: FieldSliderProps) {
+function FieldSlider({
+  label,
+  max,
+  min,
+  onChange,
+  onChangeEnd,
+  onChangeStart,
+  step,
+  value,
+}: FieldSliderProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -174,7 +185,10 @@ function FieldSlider({ label, max, min, onChange, step, value }: FieldSliderProp
         aria-label={label}
         max={max}
         min={min}
+        onKeyDown={onChangeStart}
+        onPointerDown={onChangeStart}
         onValueChange={(nextValue) => onChange(nextValue[0] ?? value)}
+        onValueCommit={onChangeEnd}
         step={step}
         value={[value]}
       />
@@ -204,6 +218,8 @@ export function FieldGradientWidget() {
   } | null>(null);
   const [previewSize, setPreviewSize] = useState({ height: 0, width: 0 });
   const addFieldGradientAnchor = useWorkspaceStore((state) => state.addFieldGradientAnchor);
+  const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
+  const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const fieldGradient = useWorkspaceStore((state) => state.fieldGradient);
   const randomizeFieldGradient = useWorkspaceStore((state) => state.randomizeFieldGradient);
   const removeFieldGradientAnchor = useWorkspaceStore((state) => state.removeFieldGradientAnchor);
@@ -242,7 +258,9 @@ export function FieldGradientWidget() {
       return;
     }
 
-    updateFieldGradientAnchor(id, getAnchorPositionFromPointer(event, preview));
+    updateFieldGradientAnchor(id, getAnchorPositionFromPointer(event, preview), {
+      history: "skip",
+    });
   };
 
   const handlePreviewDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -270,6 +288,7 @@ export function FieldGradientWidget() {
     clearDragListeners();
     activeAnchorRef.current = { id: anchor.id, pointerId: event.pointerId };
     selectFieldGradientAnchor(anchor.id);
+    beginHistoryTransaction();
 
     const move = (nativeEvent: globalThis.PointerEvent) => {
       const activeAnchor = activeAnchorRef.current;
@@ -291,6 +310,7 @@ export function FieldGradientWidget() {
 
       activeAnchorRef.current = null;
       clearDragListeners();
+      commitHistoryTransaction();
     };
 
     dragListenersRef.current = { end, move };
@@ -379,7 +399,11 @@ export function FieldGradientWidget() {
         <div className="widget-field widget-field-color">
           <span className="text-xs">Color</span>
           <FloatingColorPicker
-            onChange={(color) => updateFieldGradientAnchor(selectedAnchor.id, { color })}
+            onChange={(color) =>
+              updateFieldGradientAnchor(selectedAnchor.id, { color }, { history: "skip" })
+            }
+            onChangeEnd={commitHistoryTransaction}
+            onChangeStart={beginHistoryTransaction}
             value={selectedAnchor.color}
           />
         </div>
@@ -421,7 +445,9 @@ export function FieldGradientWidget() {
         label="Power p"
         max={6}
         min={0.4}
-        onChange={setFieldGradientPower}
+        onChange={(value) => setFieldGradientPower(value, { history: "skip" })}
+        onChangeEnd={commitHistoryTransaction}
+        onChangeStart={beginHistoryTransaction}
         step={0.05}
         value={fieldGradient.power}
       />
@@ -429,7 +455,9 @@ export function FieldGradientWidget() {
         label="Amplitude"
         max={0.6}
         min={0}
-        onChange={setFieldGradientAmplitude}
+        onChange={(value) => setFieldGradientAmplitude(value, { history: "skip" })}
+        onChangeEnd={commitHistoryTransaction}
+        onChangeStart={beginHistoryTransaction}
         step={0.005}
         value={fieldGradient.amplitude}
       />
@@ -437,7 +465,9 @@ export function FieldGradientWidget() {
         label="Freq"
         max={4}
         min={0.3}
-        onChange={setFieldGradientFrequency}
+        onChange={(value) => setFieldGradientFrequency(value, { history: "skip" })}
+        onChangeEnd={commitHistoryTransaction}
+        onChangeStart={beginHistoryTransaction}
         step={0.05}
         value={fieldGradient.frequency}
       />

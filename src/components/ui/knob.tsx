@@ -5,6 +5,8 @@ type KnobProps = {
   max?: number;
   min?: number;
   onChange: (value: number) => void;
+  onChangeEnd?: () => void;
+  onChangeStart?: () => void;
   step?: number;
   value: number;
 };
@@ -54,7 +56,16 @@ function valueToAngle(value: number, min: number | undefined, max: number | unde
   return ((value - min!) / (max! - min!)) * FULL_TURN;
 }
 
-export function Knob({ ariaLabel, max, min, onChange, step = 1, value }: KnobProps) {
+export function Knob({
+  ariaLabel,
+  max,
+  min,
+  onChange,
+  onChangeEnd,
+  onChangeStart,
+  step = 1,
+  value,
+}: KnobProps) {
   const activePointerIdRef = useRef<number | null>(null);
   const previousPointerAngleRef = useRef(0);
   const currentValueRef = useRef(value);
@@ -68,6 +79,7 @@ export function Knob({ ariaLabel, max, min, onChange, step = 1, value }: KnobPro
 
     activePointerIdRef.current = event.pointerId;
     previousPointerAngleRef.current = pointerAngle;
+    onChangeStart?.();
     event.currentTarget.setPointerCapture(event.pointerId);
 
     if (bounded) {
@@ -103,6 +115,7 @@ export function Knob({ ariaLabel, max, min, onChange, step = 1, value }: KnobPro
 
     activePointerIdRef.current = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
+    onChangeEnd?.();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -138,7 +151,10 @@ export function Knob({ ariaLabel, max, min, onChange, step = 1, value }: KnobPro
       className="grid size-9 touch-none place-items-center rounded-full border bg-muted outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
       onKeyDown={handleKeyDown}
       onLostPointerCapture={() => {
-        activePointerIdRef.current = null;
+        if (activePointerIdRef.current !== null) {
+          activePointerIdRef.current = null;
+          onChangeEnd?.();
+        }
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

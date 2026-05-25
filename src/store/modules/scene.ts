@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 
 export type WorkspaceView = "editor" | "preview";
 export type MenuId = "file" | "edit";
-export type MenuCommandId = "file.export" | "file.load";
+export type MenuCommandId = "edit.redo" | "edit.undo" | "file.export" | "file.load";
 export type MenuEventId = MenuId | MenuCommandId;
 export type SceneRenderMode = "live" | "texture-baked";
 

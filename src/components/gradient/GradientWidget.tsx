@@ -120,6 +120,8 @@ export function GradientWidget() {
   } | null>(null);
   const gradient = useWorkspaceStore((state) => state.gradient);
   const addGradientStop = useWorkspaceStore((state) => state.addGradientStop);
+  const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
+  const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const removeGradientStop = useWorkspaceStore((state) => state.removeGradientStop);
   const selectGradientStop = useWorkspaceStore((state) => state.selectGradientStop);
   const setGradientMode = useWorkspaceStore((state) => state.setGradientMode);
@@ -148,7 +150,7 @@ export function GradientWidget() {
       return;
     }
 
-    updateGradientStop(id, { location: nextLocation });
+    updateGradientStop(id, { location: nextLocation }, { history: "skip" });
   };
 
   const handleGradientTrackDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -187,6 +189,7 @@ export function GradientWidget() {
     clearStopDragListeners();
     activeStopDragRef.current = { id, pointerId: event.pointerId };
     selectGradientStop(id);
+    beginHistoryTransaction();
     updateStopFromPointer(id, event.clientX);
 
     const move = (nativeEvent: globalThis.PointerEvent) => {
@@ -209,6 +212,7 @@ export function GradientWidget() {
 
       activeStopDragRef.current = null;
       clearStopDragListeners();
+      commitHistoryTransaction();
     };
 
     stopDragListenersRef.current = { end, move };
@@ -276,13 +280,27 @@ export function GradientWidget() {
 
         <div className="widget-field widget-field-rotation">
           <span className="text-xs">Rotation</span>
-          <RotationKnob onChange={setGradientRotation} value={gradient.rotation} />
+          <RotationKnob
+            onChange={(rotation) => setGradientRotation(rotation, { history: "skip" })}
+            onChangeEnd={commitHistoryTransaction}
+            onChangeStart={beginHistoryTransaction}
+            value={gradient.rotation}
+          />
           <div className="relative w-12 overflow-visible">
             <Input
               aria-label="Gradient rotation"
               className="h-8 w-full overflow-visible bg-background pr-2 text-xs"
               inputMode="numeric"
-              onChange={(event) => setGradientRotation(parseNumericInput(event.target.value))}
+              onBlur={commitHistoryTransaction}
+              onChange={(event) =>
+                setGradientRotation(parseNumericInput(event.target.value), { history: "skip" })
+              }
+              onFocus={beginHistoryTransaction}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+              }}
               type="text"
               value={gradient.rotation}
             />
@@ -348,7 +366,9 @@ export function GradientWidget() {
         <div className="widget-field widget-field-color">
           <span className="text-xs">Color</span>
           <FloatingColorPicker
-            onChange={(color) => updateGradientStop(selectedStop.id, { color })}
+            onChange={(color) => updateGradientStop(selectedStop.id, { color }, { history: "skip" })}
+            onChangeEnd={commitHistoryTransaction}
+            onChangeStart={beginHistoryTransaction}
             value={selectedStop.color}
           />
         </div>
@@ -358,11 +378,22 @@ export function GradientWidget() {
             aria-label="Gradient stop location"
             className="h-8 bg-background text-xs"
             inputMode="numeric"
+            onBlur={commitHistoryTransaction}
             onChange={(event) =>
-              updateGradientStop(selectedStop.id, {
-                location: parseNumericInput(event.target.value),
-              })
+              updateGradientStop(
+                selectedStop.id,
+                {
+                  location: parseNumericInput(event.target.value),
+                },
+                { history: "skip" }
+              )
             }
+            onFocus={beginHistoryTransaction}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
             type="text"
             value={selectedStop.location}
           />
@@ -374,11 +405,22 @@ export function GradientWidget() {
             aria-label="Gradient stop opacity"
             className="h-8 bg-background text-xs"
             inputMode="numeric"
+            onBlur={commitHistoryTransaction}
             onChange={(event) =>
-              updateGradientStop(selectedStop.id, {
-                opacity: parseNumericInput(event.target.value),
-              })
+              updateGradientStop(
+                selectedStop.id,
+                {
+                  opacity: parseNumericInput(event.target.value),
+                },
+                { history: "skip" }
+              )
             }
+            onFocus={beginHistoryTransaction}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
             type="text"
             value={selectedStop.opacity}
           />

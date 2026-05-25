@@ -10,6 +10,7 @@ import {
   fieldGradientLayerAdapter,
   gradientLayerAdapter,
 } from "@/effects/effect-layer";
+import type { HistoryParticipant, WorkspaceStore } from "@/store/app";
 
 export type GradientMode = "linear";
 export type FieldGradientMode = "inverse-distance" | "gaussian";
@@ -44,6 +45,17 @@ export type FieldGradientState = {
   selectedAnchorId: string;
 };
 
+export type LayersHistorySnapshot = {
+  effectLayers: EffectLayer[];
+  fieldGradient: FieldGradientState;
+  gradient: GradientState;
+  selectedLayerId: string;
+};
+
+type HistoryUpdateOptions = {
+  history?: "checkpoint" | "skip";
+};
+
 export type LayersSlice = {
   effectLayers: EffectLayer[];
   fieldGradient: FieldGradientState;
@@ -63,15 +75,23 @@ export type LayersSlice = {
   selectEffectLayer: (id: string) => void;
   selectFieldGradientAnchor: (id: string) => void;
   selectGradientStop: (id: string) => void;
-  setFieldGradientAmplitude: (amplitude: number) => void;
-  setFieldGradientFrequency: (frequency: number) => void;
+  setFieldGradientAmplitude: (amplitude: number, options?: HistoryUpdateOptions) => void;
+  setFieldGradientFrequency: (frequency: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientMode: (mode: FieldGradientMode) => void;
-  setFieldGradientPower: (power: number) => void;
+  setFieldGradientPower: (power: number, options?: HistoryUpdateOptions) => void;
   setGradientMode: (mode: GradientMode) => void;
-  setGradientRotation: (rotation: number) => void;
+  setGradientRotation: (rotation: number, options?: HistoryUpdateOptions) => void;
   toggleEffectLayerEnabled: (id: string) => void;
-  updateFieldGradientAnchor: (id: string, update: Partial<Omit<FieldGradientAnchor, "id">>) => void;
-  updateGradientStop: (id: string, update: Partial<Omit<GradientStop, "id">>) => void;
+  updateFieldGradientAnchor: (
+    id: string,
+    update: Partial<Omit<FieldGradientAnchor, "id">>,
+    options?: HistoryUpdateOptions
+  ) => void;
+  updateGradientStop: (
+    id: string,
+    update: Partial<Omit<GradientStop, "id">>,
+    options?: HistoryUpdateOptions
+  ) => void;
 };
 
 const defaultGradientStops: GradientStop[] = [
@@ -159,6 +179,40 @@ const initialEffectLayers: EffectLayer[] = [
   },
 ];
 
+function cloneEffectLayer(layer: EffectLayer): EffectLayer {
+  return layer.type === "gradient"
+    ? {
+        ...layer,
+        params: cloneGradientState(layer.params),
+      }
+    : {
+        ...layer,
+        params: cloneFieldGradientState(layer.params),
+      };
+}
+
+function captureLayersHistorySnapshot(state: LayersSlice): LayersHistorySnapshot {
+  return {
+    effectLayers: state.effectLayers.map(cloneEffectLayer),
+    fieldGradient: cloneFieldGradientState(state.fieldGradient),
+    gradient: cloneGradientState(state.gradient),
+    selectedLayerId: state.selectedLayerId,
+  };
+}
+
+function restoreLayersHistorySnapshot(snapshot: LayersHistorySnapshot) {
+  return {
+    effectLayers: snapshot.effectLayers.map(cloneEffectLayer),
+    fieldGradient: cloneFieldGradientState(snapshot.fieldGradient),
+    gradient: cloneGradientState(snapshot.gradient),
+    selectedLayerId: snapshot.selectedLayerId,
+  };
+}
+
+function getHistoryPatch(state: WorkspaceStore, options?: HistoryUpdateOptions) {
+  return options?.history === "skip" ? {} : state.createHistoryCheckpoint(state);
+}
+
 function syncSelectedGradientLayer(state: LayersSlice, gradient: GradientState) {
   const selectedLayer = state.effectLayers.find((layer) => layer.id === state.selectedLayerId);
 
@@ -210,8 +264,14 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
       };
 }
 
+export const layersHistoryParticipant: HistoryParticipant<WorkspaceStore> = {
+  capture: (state) => captureLayersHistorySnapshot(state),
+  id: "layers",
+  restore: (snapshot) => restoreLayersHistorySnapshot(snapshot as LayersHistorySnapshot),
+};
+
 export const createLayersSlice: StateCreator<
-  LayersSlice,
+  WorkspaceStore,
   [],
   [],
   LayersSlice
@@ -228,6 +288,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: [...state.effectLayers, nextLayer],
         selectedLayerId: nextLayer.id,
+        ...getHistoryPatch(state),
         ...(nextLayer.type === "gradient"
           ? { gradient: cloneGradientState(nextLayer.params) }
           : { fieldGradient: cloneFieldGradientState(nextLayer.params) }),
@@ -255,6 +316,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state),
       };
     }),
   addGradientStop: (stop) =>
@@ -275,26 +337,34 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedGradientLayer(state, gradient),
         gradient,
+        ...getHistoryPatch(state),
       };
     }),
   deleteEffectLayer: (id) =>
     set((state) => {
+      const deleteIndex = state.effectLayers.findIndex((layer) => layer.id === id);
+
+      if (deleteIndex === -1) {
+        return state;
+      }
+
       const nextLayers = state.effectLayers.filter((layer) => layer.id !== id);
       const selectedLayer =
         state.selectedLayerId === id
-          ? nextLayers[Math.max(0, state.effectLayers.findIndex((layer) => layer.id === id) - 1)] ??
-            nextLayers[0]
+          ? nextLayers[Math.max(0, deleteIndex - 1)] ?? nextLayers[0]
           : nextLayers.find((layer) => layer.id === state.selectedLayerId) ?? nextLayers[0];
 
       if (!selectedLayer) {
         return {
           effectLayers: nextLayers,
+          ...getHistoryPatch(state),
           selectedLayerId: "",
         };
       }
 
       return {
         effectLayers: nextLayers,
+        ...getHistoryPatch(state),
         selectedLayerId: selectedLayer.id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
@@ -308,18 +378,25 @@ export const createLayersSlice: StateCreator<
       }
 
       const deleteIndex = state.effectLayers.findIndex((layer) => layer.id === state.selectedLayerId);
+
+      if (deleteIndex === -1) {
+        return state;
+      }
+
       const nextLayers = state.effectLayers.filter((layer) => layer.id !== state.selectedLayerId);
       const selectedLayer = nextLayers[Math.max(0, deleteIndex - 1)] ?? nextLayers[0];
 
       if (!selectedLayer) {
         return {
           effectLayers: nextLayers,
+          ...getHistoryPatch(state),
           selectedLayerId: "",
         };
       }
 
       return {
         effectLayers: nextLayers,
+        ...getHistoryPatch(state),
         selectedLayerId: selectedLayer.id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
@@ -338,6 +415,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state),
       };
     }),
   removeFieldGradientAnchor: (id) =>
@@ -347,6 +425,10 @@ export const createLayersSlice: StateCreator<
       }
 
       const nextAnchors = state.fieldGradient.anchors.filter((anchor) => anchor.id !== id);
+
+      if (nextAnchors.length === state.fieldGradient.anchors.length) {
+        return state;
+      }
 
       const fieldGradient = {
         ...state.fieldGradient,
@@ -360,6 +442,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state),
       };
     }),
   removeGradientStop: (id) =>
@@ -369,6 +452,10 @@ export const createLayersSlice: StateCreator<
       }
 
       const nextStops = state.gradient.stops.filter((stop) => stop.id !== id);
+
+      if (nextStops.length === state.gradient.stops.length) {
+        return state;
+      }
 
       const gradient = {
         ...state.gradient,
@@ -380,6 +467,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedGradientLayer(state, gradient),
         gradient,
+        ...getHistoryPatch(state),
       };
     }),
   reorderEffectLayer: (sourceId, targetId, closestEdgeOfTarget) =>
@@ -399,13 +487,15 @@ export const createLayersSlice: StateCreator<
           list: state.effectLayers,
           startIndex,
         }),
+        ...getHistoryPatch(state),
       };
     }),
   renameEffectLayer: (id, name) =>
     set((state) => {
       const trimmedName = name.trim();
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
 
-      if (!trimmedName) {
+      if (!layer || !trimmedName || layer.name === trimmedName) {
         return state;
       }
 
@@ -413,6 +503,7 @@ export const createLayersSlice: StateCreator<
         effectLayers: state.effectLayers.map((layer) =>
           layer.id === id ? { ...layer, name: trimmedName } : layer
         ),
+        ...getHistoryPatch(state),
       };
     }),
   resetFieldGradient: () =>
@@ -422,6 +513,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state),
       };
     }),
   selectEffectLayer: (id) =>
@@ -463,32 +555,50 @@ export const createLayersSlice: StateCreator<
         gradient,
       };
     }),
-  setFieldGradientAmplitude: (amplitude) =>
+  setFieldGradientAmplitude: (amplitude, options) =>
     set((state) => {
+      const nextAmplitude = clampRange(amplitude, 0, 0.6);
+
+      if (state.fieldGradient.amplitude === nextAmplitude) {
+        return state;
+      }
+
       const fieldGradient = {
         ...state.fieldGradient,
-        amplitude: clampRange(amplitude, 0, 0.6),
+        amplitude: nextAmplitude,
       };
 
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state, options),
       };
     }),
-  setFieldGradientFrequency: (frequency) =>
+  setFieldGradientFrequency: (frequency, options) =>
     set((state) => {
+      const nextFrequency = clampRange(frequency, 0.3, 4);
+
+      if (state.fieldGradient.frequency === nextFrequency) {
+        return state;
+      }
+
       const fieldGradient = {
         ...state.fieldGradient,
-        frequency: clampRange(frequency, 0.3, 4),
+        frequency: nextFrequency,
       };
 
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state, options),
       };
     }),
   setFieldGradientMode: (mode) =>
     set((state) => {
+      if (state.fieldGradient.mode === mode) {
+        return state;
+      }
+
       const fieldGradient = {
         ...state.fieldGradient,
         mode,
@@ -497,22 +607,34 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state),
       };
     }),
-  setFieldGradientPower: (power) =>
+  setFieldGradientPower: (power, options) =>
     set((state) => {
+      const nextPower = clampRange(power, 0.4, 6);
+
+      if (state.fieldGradient.power === nextPower) {
+        return state;
+      }
+
       const fieldGradient = {
         ...state.fieldGradient,
-        power: clampRange(power, 0.4, 6),
+        power: nextPower,
       };
 
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state, options),
       };
     }),
   setGradientMode: (mode) =>
     set((state) => {
+      if (state.gradient.mode === mode) {
+        return state;
+      }
+
       const gradient = {
         ...state.gradient,
         mode,
@@ -521,10 +643,15 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedGradientLayer(state, gradient),
         gradient,
+        ...getHistoryPatch(state),
       };
     }),
-  setGradientRotation: (rotation) =>
+  setGradientRotation: (rotation, options) =>
     set((state) => {
+      if (state.gradient.rotation === rotation) {
+        return state;
+      }
+
       const gradient = {
         ...state.gradient,
         rotation,
@@ -533,16 +660,30 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedGradientLayer(state, gradient),
         gradient,
+        ...getHistoryPatch(state, options),
       };
     }),
   toggleEffectLayerEnabled: (id) =>
-    set((state) => ({
-      effectLayers: state.effectLayers.map((layer) =>
-        layer.id === id ? { ...layer, enabled: !layer.enabled } : layer
-      ),
-    })),
-  updateFieldGradientAnchor: (id, update) =>
     set((state) => {
+      if (!state.effectLayers.some((layer) => layer.id === id)) {
+        return state;
+      }
+
+      return {
+        effectLayers: state.effectLayers.map((layer) =>
+          layer.id === id ? { ...layer, enabled: !layer.enabled } : layer
+        ),
+        ...getHistoryPatch(state),
+      };
+    }),
+  updateFieldGradientAnchor: (id, update, options) =>
+    set((state) => {
+      const hasAnchor = state.fieldGradient.anchors.some((anchor) => anchor.id === id);
+
+      if (!hasAnchor) {
+        return state;
+      }
+
       const fieldGradient = {
         ...state.fieldGradient,
         anchors: state.fieldGradient.anchors.map((anchor) =>
@@ -560,10 +701,17 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedFieldGradientLayer(state, fieldGradient),
         fieldGradient,
+        ...getHistoryPatch(state, options),
       };
     }),
-  updateGradientStop: (id, update) =>
+  updateGradientStop: (id, update, options) =>
     set((state) => {
+      const hasStop = state.gradient.stops.some((stop) => stop.id === id);
+
+      if (!hasStop) {
+        return state;
+      }
+
       const gradient = {
         ...state.gradient,
         stops: state.gradient.stops.map((stop) =>
@@ -582,6 +730,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedGradientLayer(state, gradient),
         gradient,
+        ...getHistoryPatch(state, options),
       };
     }),
 });

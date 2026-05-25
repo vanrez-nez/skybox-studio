@@ -5,6 +5,7 @@ import { FloatingColorPicker } from "@/components/gradient/FloatingColorPicker";
 import { RotationKnob } from "@/components/gradient/RotationKnob";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Knob } from "@/components/ui/knob";
 import {
   Select,
   SelectContent,
@@ -42,6 +43,14 @@ function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
+function degreesToRadians(degrees: number) {
+  return (degrees * Math.PI) / 180;
+}
+
+function radiansToDegrees(radians: number) {
+  return Math.round((radians * 180) / Math.PI);
+}
+
 export function GradientWidget() {
   const gradientTrackRef = useRef<HTMLDivElement>(null);
   const activeStopDragRef = useRef<{ id: string; pointerId: number } | null>(null);
@@ -52,6 +61,7 @@ export function GradientWidget() {
   const gradient = useWorkspaceStore((state) => state.gradient);
   const removeGradientStop = useWorkspaceStore((state) => state.removeGradientStop);
   const selectGradientStop = useWorkspaceStore((state) => state.selectGradientStop);
+  const setGradientMaxAngle = useWorkspaceStore((state) => state.setGradientMaxAngle);
   const setGradientMode = useWorkspaceStore((state) => state.setGradientMode);
   const setGradientRotation = useWorkspaceStore((state) => state.setGradientRotation);
   const updateGradientStop = useWorkspaceStore((state) => state.updateGradientStop);
@@ -189,24 +199,54 @@ export function GradientWidget() {
           </Select>
         </div>
 
-        <div className="widget-field widget-field-rotation">
-          <span className="text-xs">Rotation</span>
-          <RotationKnob onChange={setGradientRotation} value={gradient.rotation} />
-          <div className="relative w-12 overflow-visible">
-            <Input
-              aria-label="Gradient rotation"
-              className="h-8 w-full overflow-visible bg-background pr-2 text-xs"
-              inputMode="numeric"
-              onChange={(event) => setGradientRotation(parseNumericInput(event.target.value))}
-              type="text"
-              value={gradient.rotation}
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute right-[8px] top-[8px] size-1.25 rounded-full border border-muted-foreground"
-            />
+        {gradient.mode === "linear" ? (
+          <div className="widget-field widget-field-rotation">
+            <span className="text-xs">Rotation</span>
+            <RotationKnob onChange={setGradientRotation} value={gradient.rotation} />
+            <div className="relative w-12 overflow-visible">
+              <Input
+                aria-label="Gradient rotation"
+                className="h-8 w-full overflow-visible bg-background pr-2 text-xs"
+                inputMode="numeric"
+                onChange={(event) => setGradientRotation(parseNumericInput(event.target.value))}
+                type="text"
+                value={gradient.rotation}
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute right-[8px] top-[8px] size-1.25 rounded-full border border-muted-foreground"
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="widget-field widget-field-rotation">
+            <span className="text-xs">Spread</span>
+            <Knob
+              ariaLabel="Radial spread knob"
+              max={180}
+              min={6}
+              onChange={(spread) => setGradientMaxAngle(degreesToRadians(spread))}
+              step={1}
+              value={radiansToDegrees(gradient.maxAngle)}
+            />
+            <div className="relative w-12 overflow-visible">
+              <Input
+                aria-label="Radial spread"
+                className="h-8 w-full overflow-visible bg-background pr-2 text-xs"
+                inputMode="numeric"
+                onChange={(event) =>
+                  setGradientMaxAngle(degreesToRadians(parseNumericInput(event.target.value)))
+                }
+                type="text"
+                value={radiansToDegrees(gradient.maxAngle)}
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute right-[8px] top-[8px] size-1.25 rounded-full border border-muted-foreground"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div>

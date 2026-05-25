@@ -130,14 +130,22 @@ function getLinearGradientAxis(rotation: number): Rgb {
 }
 
 function getDirectionParameter(direction: Rgb, gradient: GradientState) {
-  if (gradient.mode === "linear") {
-    const axis = getLinearGradientAxis(gradient.rotation);
-    const dot = direction[0] * axis[0] + direction[1] * axis[1] + direction[2] * axis[2];
+  if (gradient.mode === "radial") {
+    const center = gradient.center;
+    const dot = clamp(
+      direction[0] * center[0] + direction[1] * center[1] + direction[2] * center[2],
+      -1,
+      1
+    );
+    const angle = Math.acos(dot);
 
-    return dot * 0.5 + 0.5;
+    return clamp(angle / gradient.maxAngle);
   }
 
-  return direction[1] * 0.5 + 0.5;
+  const axis = getLinearGradientAxis(gradient.rotation);
+  const dot = direction[0] * axis[0] + direction[1] * axis[1] + direction[2] * axis[2];
+
+  return dot * 0.5 + 0.5;
 }
 
 export function bakeDirectionSpaceGradient(

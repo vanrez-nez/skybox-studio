@@ -12,6 +12,12 @@
       "sourceType": "github",
       "skillPath": "skills/three/SKILL.md",
       "computedHash": "d40f783d8687f93b19657c193811c78304f84dd276ad344c38045e57b03de187"
+    },
+    "zustand": {
+      "source": "lobehub/lobehub",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/zustand/SKILL.md",
+      "computedHash": "7d89ae14703873084fc7188f2d3504a62cf946686fb29363d6521a5451d24af4"
     }
   }
 }

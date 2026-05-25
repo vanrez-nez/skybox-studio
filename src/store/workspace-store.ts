@@ -4,7 +4,7 @@ export type WorkspaceView = "editor" | "preview";
 export type MenuId = "file" | "edit";
 export type MenuCommandId = "file.export" | "file.load";
 export type MenuEventId = MenuId | MenuCommandId;
-export type GradientMode = "linear" | "radial";
+export type GradientMode = "linear";
 export type FieldGradientMode = "inverse-distance" | "gaussian";
 
 export type GradientStop = {
@@ -14,11 +14,7 @@ export type GradientStop = {
   opacity: number;
 };
 
-export type DirectionTuple = [number, number, number];
-
 export type GradientState = {
-  center: DirectionTuple;
-  maxAngle: number;
   mode: GradientMode;
   rotation: number;
   selectedStopId: string;
@@ -65,8 +61,6 @@ type WorkspaceStore = {
   setFieldGradientFrequency: (frequency: number) => void;
   setFieldGradientMode: (mode: FieldGradientMode) => void;
   setFieldGradientPower: (power: number) => void;
-  setGradientCenter: (center: DirectionTuple) => void;
-  setGradientMaxAngle: (maxAngle: number) => void;
   setGradientMode: (mode: GradientMode) => void;
   setGradientRotation: (rotation: number) => void;
   updateFieldGradientAnchor: (id: string, update: Partial<Omit<FieldGradientAnchor, "id">>) => void;
@@ -104,16 +98,6 @@ function clampRange(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function normalizeDirection(direction: DirectionTuple): DirectionTuple {
-  const length = Math.hypot(direction[0], direction[1], direction[2]);
-
-  if (length <= 0) {
-    return [0, 1, 0];
-  }
-
-  return [direction[0] / length, direction[1] / length, direction[2] / length];
-}
-
 function randomHexColor() {
   return `#${Array.from({ length: 3 }, () =>
     Math.floor(Math.random() * 256)
@@ -142,9 +126,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
     selectedAnchorId: "yellow",
   },
   gradient: {
-    center: [0, 1, 0],
-    maxAngle: Math.PI / 2,
-    mode: "radial",
+    mode: "linear",
     rotation: 0,
     selectedStopId: "middle",
     stops: defaultGradientStops,
@@ -290,20 +272,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
       fieldGradient: {
         ...state.fieldGradient,
         power: clampRange(power, 0.4, 6),
-      },
-    })),
-  setGradientCenter: (center) =>
-    set((state) => ({
-      gradient: {
-        ...state.gradient,
-        center: normalizeDirection(center),
-      },
-    })),
-  setGradientMaxAngle: (maxAngle) =>
-    set((state) => ({
-      gradient: {
-        ...state.gradient,
-        maxAngle: clampRange(maxAngle, 0.1, Math.PI),
       },
     })),
   setGradientMode: (mode) =>

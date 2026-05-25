@@ -46,6 +46,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     quaternionToTuple(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION))
   );
   const gradient = useWorkspaceStore((state) => state.gradient);
+  const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
 
   const handleGizmoAxisSelect = useCallback((direction: VectorTuple) => {
     lookAtAxisDirectionRef.current?.(direction);
@@ -365,11 +366,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         className="block h-full w-full"
         data-workspace-scene="three"
       />
-      <RotationGizmo
-        onAxisSelect={handleGizmoAxisSelect}
-        onReset={handleGizmoReset}
-        orientation={gizmoOrientation}
-      />
+      {showOrientationGizmo ? (
+        <RotationGizmo
+          onAxisSelect={handleGizmoAxisSelect}
+          onReset={handleGizmoReset}
+          orientation={gizmoOrientation}
+        />
+      ) : null}
     </div>
   );
 }

@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Widget } from "@/components/widgets/Widget";
 import type { EffectLayer, EffectLayerType } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
-import { useWorkspaceStore } from "@/store/workspace-store";
+import { useWorkspaceStore } from "@/store/app";
 
 const LAYER_DRAG_TYPE = "effect-layer";
 

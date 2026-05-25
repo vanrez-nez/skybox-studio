@@ -1,7 +1,7 @@
 import { Eye, PencilRuler, type LucideIcon } from "lucide-react";
 
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { workspaceViews, type WorkspaceView } from "@/store/workspace-store";
+import { workspaceViews, type WorkspaceView } from "@/store/modules/scene";
 
 const viewIcons: Record<WorkspaceView, LucideIcon> = {
   editor: PencilRuler,

@@ -8,11 +8,9 @@ import {
 } from "@/processes/texture-baking";
 import type { TextureBakeWorkerResponse } from "@/processes/texture-baking.worker";
 import TextureBakingWorker from "@/processes/texture-baking.worker?worker";
-import {
-  type GradientState,
-  useWorkspaceStore,
-  type WorkspaceView,
-} from "@/store/workspace-store";
+import { useWorkspaceStore } from "@/store/app";
+import type { GradientState } from "@/store/modules/layers";
+import type { WorkspaceView } from "@/store/modules/scene";
 import { RotationGizmo } from "@/components/workspace/RotationGizmo";
 
 type ThreeWorkspaceSceneProps = {

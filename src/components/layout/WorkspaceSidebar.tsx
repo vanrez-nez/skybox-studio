@@ -1,7 +1,7 @@
 import { FieldGradientWidget } from "@/components/gradient/FieldGradientWidget";
 import { GradientWidget } from "@/components/gradient/GradientWidget";
 import { LayersWidget } from "@/components/layers/LayersWidget";
-import { useWorkspaceStore } from "@/store/workspace-store";
+import { useWorkspaceStore } from "@/store/app";
 
 export function WorkspaceSidebar() {
   const selectedLayer = useWorkspaceStore((state) =>

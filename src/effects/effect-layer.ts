@@ -1,4 +1,4 @@
-import type { FieldGradientState, GradientState } from "@/store/workspace-store";
+import type { FieldGradientState, GradientState } from "@/store/modules/layers";
 
 export type EffectLayerType = "gradient" | "field-gradient";
 

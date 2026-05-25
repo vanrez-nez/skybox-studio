@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import type { GradientState } from "@/store/workspace-store";
+import type { GradientState } from "@/store/modules/layers";
 import {
   type BakedGradientImage,
   bakeDirectionSpaceGradientData,

@@ -1,5 +1,5 @@
 import { bakeDirectionSpaceGradientData } from "@/processes/texture-baking-core";
-import type { GradientState } from "@/store/workspace-store";
+import type { GradientState } from "@/store/modules/layers";
 
 export type TextureBakeWorkerRequest = {
   gradient: GradientState;

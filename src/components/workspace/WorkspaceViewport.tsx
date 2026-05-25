@@ -1,6 +1,7 @@
 import { EditorActionPanel } from "@/components/editor/EditorActionPanel";
 import { ThreeWorkspaceScene } from "@/components/workspace/ThreeWorkspaceScene";
-import { useWorkspaceStore, workspaceViews } from "@/store/workspace-store";
+import { useWorkspaceStore } from "@/store/app";
+import { workspaceViews } from "@/store/modules/scene";
 
 export function WorkspaceViewport() {
   const activeView = useWorkspaceStore((state) => state.activeView);

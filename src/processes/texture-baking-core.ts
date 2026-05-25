@@ -1,4 +1,4 @@
-import type { GradientState, GradientStop } from "@/store/workspace-store";
+import type { GradientState, GradientStop } from "@/store/modules/layers";
 
 export const DEFAULT_BAKE_WIDTH = 1024;
 

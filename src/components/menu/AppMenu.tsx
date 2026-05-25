@@ -6,10 +6,10 @@ import {
   MenubarTrigger,
 } from "@/components/ui/menubar";
 import {
-  useWorkspaceStore,
   type MenuCommandId,
   type MenuId,
-} from "@/store/workspace-store";
+} from "@/store/modules/scene";
+import { useWorkspaceStore } from "@/store/app";
 
 const menuItems: Array<{
   id: MenuId;

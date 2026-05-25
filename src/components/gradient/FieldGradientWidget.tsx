@@ -14,12 +14,12 @@ import { Slider } from "@/components/ui/slider";
 import { Widget } from "@/components/widgets/Widget";
 import { fieldGradientLayerAdapter } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
+import { useWorkspaceStore } from "@/store/app";
 import {
   type FieldGradientAnchor,
   type FieldGradientMode,
   type FieldGradientState,
-  useWorkspaceStore,
-} from "@/store/workspace-store";
+} from "@/store/modules/layers";
 
 export const fieldGradientEffectLayerAdapter = fieldGradientLayerAdapter;
 

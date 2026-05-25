@@ -2,7 +2,8 @@ import { AppMenu } from "@/components/menu/AppMenu";
 import { ViewTabs } from "@/components/navigation/ViewTabs";
 import { Tabs } from "@/components/ui/tabs";
 import { WorkspaceViewport } from "@/components/workspace/WorkspaceViewport";
-import { useWorkspaceStore, type WorkspaceView } from "@/store/workspace-store";
+import { useWorkspaceStore } from "@/store/app";
+import type { WorkspaceView } from "@/store/modules/scene";
 import { AppFooter } from "./AppFooter";
 import { WorkspaceSplitLayout } from "./WorkspaceSplitLayout";
 

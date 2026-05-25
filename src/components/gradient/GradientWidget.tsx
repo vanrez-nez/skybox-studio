@@ -21,11 +21,11 @@ import {
 import { Widget } from "@/components/widgets/Widget";
 import { gradientLayerAdapter } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
+import { useWorkspaceStore } from "@/store/app";
 import {
   type GradientMode,
   type GradientStop,
-  useWorkspaceStore,
-} from "@/store/workspace-store";
+} from "@/store/modules/layers";
 
 export const gradientEffectLayerAdapter = gradientLayerAdapter;
 

@@ -1,7 +1,11 @@
 import type { FieldGradientState, GradientState } from "@/store/modules/layers";
+import {
+  normalizeBlendMode,
+  type EffectLayerBlendMode,
+} from "@/effects/blend-modes";
 
 export type EffectLayerType = "gradient" | "field-gradient";
-export type EffectLayerBlendMode = "normal" | "additive" | "subtractive" | "multiply";
+export type { EffectLayerBlendMode };
 
 export type SerializedGradientEffect = {
   params: GradientState;
@@ -94,7 +98,7 @@ export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer 
 export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer {
   return serialized.effect.type === "gradient"
     ? {
-        blendMode: serialized.blendMode ?? "normal",
+        blendMode: normalizeBlendMode(serialized.blendMode),
         enabled: serialized.enabled,
         id: serialized.id,
         name: serialized.name,
@@ -103,7 +107,7 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
         type: "gradient",
       }
     : {
-        blendMode: serialized.blendMode ?? "normal",
+        blendMode: normalizeBlendMode(serialized.blendMode),
         enabled: serialized.enabled,
         id: serialized.id,
         name: serialized.name,

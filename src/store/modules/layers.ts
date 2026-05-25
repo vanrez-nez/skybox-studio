@@ -53,6 +53,11 @@ export type LayersHistorySnapshot = {
   selectedLayerId: string;
 };
 
+export type EffectLayerBlendModePreview = {
+  blendMode: EffectLayerBlendMode;
+  layerId: string;
+};
+
 type HistoryUpdateOptions = {
   history?: "checkpoint" | "skip";
 };
@@ -61,9 +66,11 @@ export type LayersSlice = {
   effectLayers: EffectLayer[];
   fieldGradient: FieldGradientState;
   gradient: GradientState;
+  previewEffectLayerBlendMode: EffectLayerBlendModePreview | null;
   selectedLayerId: string;
   addEffectLayer: (type: EffectLayerType) => void;
   addFieldGradientAnchor: (anchor: Omit<FieldGradientAnchor, "id">) => void;
+  clearPreviewEffectLayerBlendMode: () => void;
   addGradientStop: (stop: Omit<GradientStop, "id">) => void;
   deleteEffectLayer: (id: string) => void;
   deleteSelectedEffectLayer: () => void;
@@ -77,6 +84,7 @@ export type LayersSlice = {
   selectFieldGradientAnchor: (id: string) => void;
   selectGradientStop: (id: string) => void;
   setEffectLayerBlendMode: (id: string, blendMode: EffectLayerBlendMode) => void;
+  setPreviewEffectLayerBlendMode: (layerId: string, blendMode: EffectLayerBlendMode) => void;
   setEffectLayerOpacity: (id: string, opacity: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientAmplitude: (amplitude: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientFrequency: (frequency: number, options?: HistoryUpdateOptions) => void;
@@ -98,16 +106,12 @@ export type LayersSlice = {
 };
 
 const defaultGradientStops: GradientStop[] = [
-  { id: "start", color: "#ff6a00", location: 0, opacity: 100 },
-  { id: "middle", color: "#ffd000", location: 50, opacity: 100 },
-  { id: "end", color: "#ff8a00", location: 100, opacity: 100 },
+  { id: "start", color: "#00ff00", location: 0, opacity: 100 },
+  { id: "end", color: "#00ff00", location: 100, opacity: 100 },
 ];
 
 const defaultFieldGradientAnchors: FieldGradientAnchor[] = [
-  { id: "cyan", color: "#35c4e0", x: 0.12, y: 0.2 },
-  { id: "blue", color: "#2f80d1", x: 0.07, y: 0.52 },
-  { id: "yellow", color: "#f5cc42", x: 0.6, y: 0.44 },
-  { id: "orange", color: "#f08a28", x: 0.88, y: 0.78 },
+  { id: "red", color: "#ff0000", x: 0.5, y: 0.5 },
 ];
 
 const FIELD_GRADIENT_MAX_ANCHORS = 8;
@@ -147,7 +151,7 @@ export function createDefaultGradientState(): GradientState {
   return {
     mode: "linear",
     rotation: 0,
-    selectedStopId: "middle",
+    selectedStopId: "start",
     stops: defaultGradientStops.map((stop) => ({ ...stop })),
   };
 }
@@ -159,7 +163,7 @@ export function createDefaultFieldGradientState(): FieldGradientState {
     frequency: 1.2,
     mode: "inverse-distance",
     power: 2.2,
-    selectedAnchorId: "yellow",
+    selectedAnchorId: "red",
   };
 }
 
@@ -290,6 +294,7 @@ export const createLayersSlice: StateCreator<
   effectLayers: initialEffectLayers,
   fieldGradient: initialFieldGradient,
   gradient: initialGradient,
+  previewEffectLayerBlendMode: null,
   selectedLayerId: INITIAL_GRADIENT_LAYER_ID,
   addEffectLayer: (type) =>
     set((state) => {
@@ -303,6 +308,7 @@ export const createLayersSlice: StateCreator<
         ...(nextLayer.type === "gradient"
           ? { gradient: cloneGradientState(nextLayer.params) }
           : { fieldGradient: cloneFieldGradientState(nextLayer.params) }),
+        previewEffectLayerBlendMode: null,
       };
     }),
   addFieldGradientAnchor: (anchor) =>
@@ -351,6 +357,7 @@ export const createLayersSlice: StateCreator<
         ...getHistoryPatch(state),
       };
     }),
+  clearPreviewEffectLayerBlendMode: () => set({ previewEffectLayerBlendMode: null }),
   deleteEffectLayer: (id) =>
     set((state) => {
       const deleteIndex = state.effectLayers.findIndex((layer) => layer.id === id);
@@ -369,6 +376,7 @@ export const createLayersSlice: StateCreator<
         return {
           effectLayers: nextLayers,
           ...getHistoryPatch(state),
+          previewEffectLayerBlendMode: null,
           selectedLayerId: "",
         };
       }
@@ -376,6 +384,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: nextLayers,
         ...getHistoryPatch(state),
+        previewEffectLayerBlendMode: null,
         selectedLayerId: selectedLayer.id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
@@ -401,6 +410,7 @@ export const createLayersSlice: StateCreator<
         return {
           effectLayers: nextLayers,
           ...getHistoryPatch(state),
+          previewEffectLayerBlendMode: null,
           selectedLayerId: "",
         };
       }
@@ -408,6 +418,7 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: nextLayers,
         ...getHistoryPatch(state),
+        previewEffectLayerBlendMode: null,
         selectedLayerId: selectedLayer.id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
@@ -499,6 +510,7 @@ export const createLayersSlice: StateCreator<
           startIndex,
         }),
         ...getHistoryPatch(state),
+        previewEffectLayerBlendMode: null,
       };
     }),
   renameEffectLayer: (id, name) =>
@@ -536,6 +548,7 @@ export const createLayersSlice: StateCreator<
       }
 
       return {
+        previewEffectLayerBlendMode: null,
         selectedLayerId: id,
         ...(selectedLayer.type === "gradient"
           ? { gradient: cloneGradientState(selectedLayer.params) }
@@ -579,6 +592,28 @@ export const createLayersSlice: StateCreator<
           effectLayer.id === id ? { ...effectLayer, blendMode } : effectLayer
         ),
         ...getHistoryPatch(state),
+        previewEffectLayerBlendMode: null,
+      };
+    }),
+  setPreviewEffectLayerBlendMode: (layerId, blendMode) =>
+    set((state) => {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === layerId);
+
+      if (!layer) {
+        return {
+          previewEffectLayerBlendMode: null,
+        };
+      }
+
+      if (
+        state.previewEffectLayerBlendMode?.layerId === layerId &&
+        state.previewEffectLayerBlendMode.blendMode === blendMode
+      ) {
+        return state;
+      }
+
+      return {
+        previewEffectLayerBlendMode: { blendMode, layerId },
       };
     }),
   setEffectLayerOpacity: (id, opacity, options) =>

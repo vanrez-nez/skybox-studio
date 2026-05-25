@@ -26,23 +26,18 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { SliderInput } from "@/components/ui/slider-input";
 import { Widget } from "@/components/widgets/Widget";
+import { BLEND_MODE_GROUPS } from "@/effects/blend-modes";
 import type { EffectLayer, EffectLayerBlendMode, EffectLayerType } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
 
 const LAYER_DRAG_TYPE = "effect-layer";
-const BLEND_MODE_OPTIONS: Array<{ label: string; value: EffectLayerBlendMode }> = [
-  { label: "Normal", value: "normal" },
-  { label: "Add", value: "additive" },
-  { label: "Subtract", value: "subtractive" },
-  { label: "Multiply", value: "multiply" },
-];
-
 function getLayerIcon(type: EffectLayerType) {
   return type === "gradient" ? Palette : Sparkles;
 }
@@ -270,8 +265,12 @@ function LayerRow({
 export function LayersWidget() {
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [isBlendSelectOpen, setIsBlendSelectOpen] = useState(false);
   const addEffectLayer = useWorkspaceStore((state) => state.addEffectLayer);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
+  const clearPreviewEffectLayerBlendMode = useWorkspaceStore(
+    (state) => state.clearPreviewEffectLayerBlendMode
+  );
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const deleteEffectLayer = useWorkspaceStore((state) => state.deleteEffectLayer);
   const deleteSelectedEffectLayer = useWorkspaceStore((state) => state.deleteSelectedEffectLayer);
@@ -282,6 +281,9 @@ export function LayersWidget() {
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const setEffectLayerBlendMode = useWorkspaceStore((state) => state.setEffectLayerBlendMode);
   const setEffectLayerOpacity = useWorkspaceStore((state) => state.setEffectLayerOpacity);
+  const setPreviewEffectLayerBlendMode = useWorkspaceStore(
+    (state) => state.setPreviewEffectLayerBlendMode
+  );
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const canDeleteLayer = effectLayers.length > 0 && Boolean(selectedLayerId);
   const selectedLayer = effectLayers.find((layer) => layer.id === selectedLayerId);
@@ -333,6 +335,10 @@ export function LayersWidget() {
     [reorderEffectLayer]
   );
 
+  useEffect(() => {
+    clearPreviewEffectLayerBlendMode();
+  }, [clearPreviewEffectLayerBlendMode, selectedLayerId]);
+
   const startRenamingLayer = (layer: EffectLayer) => {
     selectEffectLayer(layer.id);
     setEditingLayerId(layer.id);
@@ -358,6 +364,15 @@ export function LayersWidget() {
     setEditingLayerId(null);
   };
 
+  const previewBlendMode = (blendMode: EffectLayerBlendMode) => {
+    if (!selectedLayer?.id) {
+      clearPreviewEffectLayerBlendMode();
+      return;
+    }
+
+    setPreviewEffectLayerBlendMode(selectedLayer.id, blendMode);
+  };
+
   return (
     <Widget title="Layers" contentClassName="flex min-h-32 flex-col gap-2">
       <div className="flex items-center justify-between gap-2 border-b pb-2">
@@ -365,10 +380,21 @@ export function LayersWidget() {
           <span className="text-xs">Blend:</span>
           <Select
             disabled={!selectedLayer}
-            onValueChange={(value) =>
-              selectedLayer?.id &&
-              setEffectLayerBlendMode(selectedLayer.id, value as EffectLayerBlendMode)
-            }
+            onOpenChange={(isOpen) => {
+              setIsBlendSelectOpen(isOpen);
+
+              if (!isOpen) {
+                clearPreviewEffectLayerBlendMode();
+              }
+            }}
+            onValueChange={(value) => {
+              clearPreviewEffectLayerBlendMode();
+
+              if (selectedLayer?.id) {
+                setEffectLayerBlendMode(selectedLayer.id, value as EffectLayerBlendMode);
+              }
+            }}
+            open={isBlendSelectOpen}
             value={selectedLayer?.blendMode ?? "normal"}
           >
             <SelectTrigger
@@ -377,14 +403,23 @@ export function LayersWidget() {
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {BLEND_MODE_OPTIONS.map((option) => (
-                  <SelectItem className="text-xs" key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
+            <SelectContent onPointerLeave={clearPreviewEffectLayerBlendMode}>
+              {BLEND_MODE_GROUPS.map((group, groupIndex) => (
+                <SelectGroup key={group.label}>
+                  {groupIndex > 0 ? <SelectSeparator /> : null}
+                  {group.modes.map((option) => (
+                    <SelectItem
+                      className="text-xs"
+                      key={option.value}
+                      onFocus={() => previewBlendMode(option.value)}
+                      onPointerMove={() => previewBlendMode(option.value)}
+                      value={option.value}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
             </SelectContent>
           </Select>
         </div>

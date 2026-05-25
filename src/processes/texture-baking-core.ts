@@ -1,4 +1,5 @@
 import type { GradientState } from "@/store/modules/layers";
+import { compositeBlendChannel, normalizeBlendMode } from "@/effects/blend-modes";
 import type {
   SkyboxFieldGradientParams,
   SkyboxGradientParams,
@@ -236,24 +237,6 @@ function sampleLayer(direction: Rgb, layer: SkyboxManifestLayer) {
     : sampleFieldGradientLayer(direction, layer.params);
 }
 
-function blendLayerChannel(destination: number, source: number, alpha: number, layer: SkyboxManifestLayer) {
-  let blended = source;
-
-  if (layer.blendMode === "additive") {
-    blended = destination + source;
-  }
-
-  if (layer.blendMode === "subtractive") {
-    blended = destination - source;
-  }
-
-  if (layer.blendMode === "multiply") {
-    blended = destination * source;
-  }
-
-  return blended * alpha + destination * (1 - alpha);
-}
-
 function getRenderableLayers(manifest: SkyboxManifestV1) {
   return manifest.layers.filter((layer) => layer.enabled).reverse();
 }
@@ -287,9 +270,11 @@ export function bakeSkyboxManifestData(
         const sample = sampleLayer(direction, layer);
         const alpha = clamp(sample.alpha * (layer.opacity / 100));
 
-        linearColor[0] = blendLayerChannel(linearColor[0], sample.color[0], alpha, layer);
-        linearColor[1] = blendLayerChannel(linearColor[1], sample.color[1], alpha, layer);
-        linearColor[2] = blendLayerChannel(linearColor[2], sample.color[2], alpha, layer);
+        const blendMode = normalizeBlendMode(layer.blendMode);
+
+        linearColor[0] = compositeBlendChannel(blendMode, linearColor[0], sample.color[0], alpha);
+        linearColor[1] = compositeBlendChannel(blendMode, linearColor[1], sample.color[1], alpha);
+        linearColor[2] = compositeBlendChannel(blendMode, linearColor[2], sample.color[2], alpha);
       });
 
       const pixelIndex = y * width + x;

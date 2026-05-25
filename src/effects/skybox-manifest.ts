@@ -1,10 +1,17 @@
 import type { EffectLayer } from "@/effects/effect-layer";
 import type { SkyboxManifestLayer, SkyboxManifestV1 } from "@/runtime";
+import type { EffectLayerBlendModePreview } from "@/store/modules/layers";
 
-function layerToManifestLayer(layer: EffectLayer): SkyboxManifestLayer {
+function layerToManifestLayer(
+  layer: EffectLayer,
+  previewBlendMode?: EffectLayerBlendModePreview | null
+): SkyboxManifestLayer {
+  const blendMode =
+    previewBlendMode?.layerId === layer.id ? previewBlendMode.blendMode : layer.blendMode;
+
   return layer.type === "gradient"
     ? {
-        blendMode: layer.blendMode,
+        blendMode,
         enabled: layer.enabled,
         id: layer.id,
         name: layer.name,
@@ -21,7 +28,7 @@ function layerToManifestLayer(layer: EffectLayer): SkyboxManifestLayer {
         type: "gradient",
       }
     : {
-        blendMode: layer.blendMode,
+        blendMode,
         enabled: layer.enabled,
         id: layer.id,
         name: layer.name,
@@ -41,13 +48,16 @@ function layerToManifestLayer(layer: EffectLayer): SkyboxManifestLayer {
       };
 }
 
-export function createSkyboxManifest(effectLayers: EffectLayer[]): SkyboxManifestV1 {
+export function createSkyboxManifest(
+  effectLayers: EffectLayer[],
+  previewBlendMode?: EffectLayerBlendModePreview | null
+): SkyboxManifestV1 {
   return {
     composition: {
       mode: "alpha-over",
       order: "bottom-to-top",
     },
-    layers: effectLayers.map(layerToManifestLayer),
+    layers: effectLayers.map((layer) => layerToManifestLayer(layer, previewBlendMode)),
     version: 1,
   };
 }

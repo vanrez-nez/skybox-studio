@@ -49,9 +49,15 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     quaternionToTuple(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION))
   );
   const effectLayers = useWorkspaceStore((state) => state.effectLayers);
+  const previewEffectLayerBlendMode = useWorkspaceStore(
+    (state) => state.previewEffectLayerBlendMode
+  );
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
-  const skyboxManifest = useMemo(() => createSkyboxManifest(effectLayers), [effectLayers]);
+  const skyboxManifest = useMemo(
+    () => createSkyboxManifest(effectLayers, previewEffectLayerBlendMode),
+    [effectLayers, previewEffectLayerBlendMode]
+  );
 
   const handleGizmoAxisSelect = useCallback((direction: VectorTuple) => {
     lookAtAxisDirectionRef.current?.(direction);

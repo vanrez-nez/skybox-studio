@@ -4,6 +4,7 @@ import type { SkyboxManifestLayer, SkyboxManifestV1 } from "@/runtime";
 function layerToManifestLayer(layer: EffectLayer): SkyboxManifestLayer {
   return layer.type === "gradient"
     ? {
+        blendMode: layer.blendMode,
         enabled: layer.enabled,
         id: layer.id,
         name: layer.name,
@@ -20,6 +21,7 @@ function layerToManifestLayer(layer: EffectLayer): SkyboxManifestLayer {
         type: "gradient",
       }
     : {
+        blendMode: layer.blendMode,
         enabled: layer.enabled,
         id: layer.id,
         name: layer.name,
@@ -49,4 +51,3 @@ export function createSkyboxManifest(effectLayers: EffectLayer[]): SkyboxManifes
     version: 1,
   };
 }
-

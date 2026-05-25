@@ -4,6 +4,7 @@ import {
   type PointerEvent,
   useEffect,
   useRef,
+  useState,
 } from "react";
 import { Trash2 } from "lucide-react";
 
@@ -18,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SliderInput } from "@/components/ui/slider-input";
 import { Widget } from "@/components/widgets/Widget";
 import { gradientLayerAdapter } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
@@ -34,7 +36,9 @@ function sortStops(stops: GradientStop[]) {
 }
 
 function gradientStopToCss(stop: GradientStop) {
-  return `${stop.color} ${stop.location}%`;
+  const [red, green, blue] = hexToRgb(stop.color);
+
+  return `rgb(${red} ${green} ${blue} / ${clampPercent(stop.opacity)}%) ${stop.location}%`;
 }
 
 function getGradientBackground(stops: GradientStop[]) {
@@ -42,7 +46,7 @@ function getGradientBackground(stops: GradientStop[]) {
 }
 
 function parseNumericInput(value: string) {
-  const parsedValue = Number(value);
+  const parsedValue = Number.parseFloat(value.replace("%", "").trim());
 
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 }
@@ -118,6 +122,7 @@ export function GradientWidget() {
     end: (event: globalThis.PointerEvent) => void;
     move: (event: globalThis.PointerEvent) => void;
   } | null>(null);
+  const [focusedStopField, setFocusedStopField] = useState<"location" | "opacity" | null>(null);
   const gradient = useWorkspaceStore((state) => state.gradient);
   const addGradientStop = useWorkspaceStore((state) => state.addGradientStop);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
@@ -129,6 +134,7 @@ export function GradientWidget() {
   const updateGradientStop = useWorkspaceStore((state) => state.updateGradientStop);
   const selectedStop =
     gradient.stops.find((stop) => stop.id === gradient.selectedStopId) ?? gradient.stops[0];
+  const gradientTrackBackground = getGradientBackground(gradient.stops);
   const canRemoveStop = gradient.stops.length > 2;
   const getLocationFromPointer = (clientX: number) => {
     const track = gradientTrackRef.current;
@@ -254,6 +260,14 @@ export function GradientWidget() {
     updateGradientStop(stop.id, { location: stop.location + change });
   };
 
+  const updateSelectedStopPercent = (
+    field: "location" | "opacity",
+    value: number,
+    options?: { history?: "checkpoint" | "skip" }
+  ) => {
+    updateGradientStop(selectedStop.id, { [field]: value }, options);
+  };
+
   useEffect(
     () => () => {
       clearStopDragListeners();
@@ -321,9 +335,10 @@ export function GradientWidget() {
               onDoubleClick={handleGradientTrackDoubleClick}
             >
               <div
-                className="absolute top-3 right-0 left-0 h-3 rounded-full border"
-                style={{ background: getGradientBackground(gradient.stops) }}
-              />
+                className="transparent-checker absolute top-3 right-0 left-0 h-3 overflow-hidden rounded-full border"
+              >
+                <div className="h-full" style={{ background: gradientTrackBackground }} />
+              </div>
               {sortStops(gradient.stops).map((stop) => {
                 const isSelected = stop.id === selectedStop.id;
 
@@ -374,57 +389,47 @@ export function GradientWidget() {
         </div>
         <div className="widget-field widget-field-number">
           <span className="text-xs">Location</span>
-          <Input
-            aria-label="Gradient stop location"
-            className="h-8 bg-background text-xs"
-            inputMode="numeric"
-            onBlur={commitHistoryTransaction}
-            onChange={(event) =>
-              updateGradientStop(
-                selectedStop.id,
-                {
-                  location: parseNumericInput(event.target.value),
-                },
-                { history: "skip" }
-              )
-            }
-            onFocus={beginHistoryTransaction}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-              }
+          <SliderInput
+            ariaLabel="Gradient stop location"
+            onBlur={() => {
+              setFocusedStopField(null);
+              commitHistoryTransaction();
             }}
-            type="text"
+            onFocus={() => {
+              setFocusedStopField("location");
+              beginHistoryTransaction();
+            }}
+            onInteractionEnd={commitHistoryTransaction}
+            onInteractionStart={beginHistoryTransaction}
+            onPanelOpen={() => setFocusedStopField("location")}
+            onValueChange={(value, options) =>
+              updateSelectedStopPercent("location", value, options)
+            }
+            sliderAriaLabel="Gradient stop location slider"
             value={selectedStop.location}
           />
-          <span className="text-xs text-muted-foreground">%</span>
         </div>
         <div className="widget-field widget-field-number">
           <span className="text-xs">Opacity</span>
-          <Input
-            aria-label="Gradient stop opacity"
-            className="h-8 bg-background text-xs"
-            inputMode="numeric"
-            onBlur={commitHistoryTransaction}
-            onChange={(event) =>
-              updateGradientStop(
-                selectedStop.id,
-                {
-                  opacity: parseNumericInput(event.target.value),
-                },
-                { history: "skip" }
-              )
-            }
-            onFocus={beginHistoryTransaction}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-              }
+          <SliderInput
+            ariaLabel="Gradient stop opacity"
+            onBlur={() => {
+              setFocusedStopField(null);
+              commitHistoryTransaction();
             }}
-            type="text"
+            onFocus={() => {
+              setFocusedStopField("opacity");
+              beginHistoryTransaction();
+            }}
+            onInteractionEnd={commitHistoryTransaction}
+            onInteractionStart={beginHistoryTransaction}
+            onPanelOpen={() => setFocusedStopField("opacity")}
+            onValueChange={(value, options) =>
+              updateSelectedStopPercent("opacity", value, options)
+            }
+            sliderAriaLabel="Gradient stop opacity slider"
             value={selectedStop.opacity}
           />
-          <span className="text-xs text-muted-foreground">%</span>
         </div>
       </div>
     </Widget>

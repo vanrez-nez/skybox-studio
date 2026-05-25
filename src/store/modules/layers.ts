@@ -6,6 +6,7 @@ import {
   cloneFieldGradientState,
   cloneGradientState,
   type EffectLayer,
+  type EffectLayerBlendMode,
   type EffectLayerType,
   fieldGradientLayerAdapter,
   gradientLayerAdapter,
@@ -75,6 +76,7 @@ export type LayersSlice = {
   selectEffectLayer: (id: string) => void;
   selectFieldGradientAnchor: (id: string) => void;
   selectGradientStop: (id: string) => void;
+  setEffectLayerBlendMode: (id: string, blendMode: EffectLayerBlendMode) => void;
   setEffectLayerOpacity: (id: string, opacity: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientAmplitude: (amplitude: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientFrequency: (frequency: number, options?: HistoryUpdateOptions) => void;
@@ -165,6 +167,7 @@ const initialGradient = createDefaultGradientState();
 const initialFieldGradient = createDefaultFieldGradientState();
 const initialEffectLayers: EffectLayer[] = [
   {
+    blendMode: "normal",
     enabled: true,
     id: INITIAL_GRADIENT_LAYER_ID,
     name: "Gradient",
@@ -173,6 +176,7 @@ const initialEffectLayers: EffectLayer[] = [
     type: "gradient",
   },
   {
+    blendMode: "normal",
     enabled: true,
     id: INITIAL_FIELD_GRADIENT_LAYER_ID,
     name: "Field Gradient",
@@ -252,6 +256,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
 
   return type === "gradient"
     ? {
+        blendMode: "normal",
         enabled: true,
         id,
         name: gradientLayerAdapter.getDefaultName(index),
@@ -260,6 +265,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
         type,
       }
     : {
+        blendMode: "normal",
         enabled: true,
         id,
         name: fieldGradientLayerAdapter.getDefaultName(index),
@@ -558,6 +564,21 @@ export const createLayersSlice: StateCreator<
       return {
         effectLayers: syncSelectedGradientLayer(state, gradient),
         gradient,
+      };
+    }),
+  setEffectLayerBlendMode: (id, blendMode) =>
+    set((state) => {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
+
+      if (!layer || layer.blendMode === blendMode) {
+        return state;
+      }
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === id ? { ...effectLayer, blendMode } : effectLayer
+        ),
+        ...getHistoryPatch(state),
       };
     }),
   setEffectLayerOpacity: (id, opacity, options) =>

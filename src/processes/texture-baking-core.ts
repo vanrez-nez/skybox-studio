@@ -236,6 +236,24 @@ function sampleLayer(direction: Rgb, layer: SkyboxManifestLayer) {
     : sampleFieldGradientLayer(direction, layer.params);
 }
 
+function blendLayerChannel(destination: number, source: number, alpha: number, layer: SkyboxManifestLayer) {
+  let blended = source;
+
+  if (layer.blendMode === "additive") {
+    blended = destination + source;
+  }
+
+  if (layer.blendMode === "subtractive") {
+    blended = destination - source;
+  }
+
+  if (layer.blendMode === "multiply") {
+    blended = destination * source;
+  }
+
+  return blended * alpha + destination * (1 - alpha);
+}
+
 function getRenderableLayers(manifest: SkyboxManifestV1) {
   return manifest.layers.filter((layer) => layer.enabled).reverse();
 }
@@ -269,9 +287,9 @@ export function bakeSkyboxManifestData(
         const sample = sampleLayer(direction, layer);
         const alpha = clamp(sample.alpha * (layer.opacity / 100));
 
-        linearColor[0] = sample.color[0] * alpha + linearColor[0] * (1 - alpha);
-        linearColor[1] = sample.color[1] * alpha + linearColor[1] * (1 - alpha);
-        linearColor[2] = sample.color[2] * alpha + linearColor[2] * (1 - alpha);
+        linearColor[0] = blendLayerChannel(linearColor[0], sample.color[0], alpha, layer);
+        linearColor[1] = blendLayerChannel(linearColor[1], sample.color[1], alpha, layer);
+        linearColor[2] = blendLayerChannel(linearColor[2], sample.color[2], alpha, layer);
       });
 
       const pixelIndex = y * width + x;
@@ -305,6 +323,7 @@ export function bakeDirectionSpaceGradientData(
       composition: { mode: "alpha-over", order: "bottom-to-top" },
       layers: [
         {
+          blendMode: "normal",
           enabled: true,
           id: "gradient",
           name: "Gradient",

@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   draggable,
   dropTargetForElements,
@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { ChevronDown, Eye, EyeOff, Palette, Sparkles, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Palette, Sparkles, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -21,39 +21,27 @@ import {
 } from "@/components/ui/context-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
-import { Widget, type WidgetOwnerRect, type WidgetPosition } from "@/components/widgets/Widget";
-import type { EffectLayer, EffectLayerType } from "@/effects/effect-layer";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SliderInput } from "@/components/ui/slider-input";
+import { Widget } from "@/components/widgets/Widget";
+import type { EffectLayer, EffectLayerBlendMode, EffectLayerType } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
 
 const LAYER_DRAG_TYPE = "effect-layer";
-const DEFAULT_OPACITY_PANEL_POSITION: WidgetPosition = { x: 12, y: 12 };
-
-function clampOpacity(value: number) {
-  return Math.min(100, Math.max(0, value));
-}
-
-function formatOpacity(value: number) {
-  return `${Math.round(value)} %`;
-}
-
-function parseOpacityInput(value: string) {
-  const parsedValue = Number.parseFloat(value.replace("%", "").trim());
-
-  return Number.isFinite(parsedValue) ? clampOpacity(parsedValue) : null;
-}
-
-function rectToWidgetOwnerRect(rect: DOMRect): WidgetOwnerRect {
-  return {
-    bottom: rect.bottom,
-    height: rect.height,
-    left: rect.left,
-    right: rect.right,
-    top: rect.top,
-    width: rect.width,
-  };
-}
+const BLEND_MODE_OPTIONS: Array<{ label: string; value: EffectLayerBlendMode }> = [
+  { label: "Normal", value: "normal" },
+  { label: "Add", value: "additive" },
+  { label: "Subtract", value: "subtractive" },
+  { label: "Multiply", value: "multiply" },
+];
 
 function getLayerIcon(type: EffectLayerType) {
   return type === "gradient" ? Palette : Sparkles;
@@ -282,14 +270,6 @@ function LayerRow({
 export function LayersWidget() {
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [isOpacityPanelOpen, setIsOpacityPanelOpen] = useState(false);
-  const [opacityDraft, setOpacityDraft] = useState("");
-  const [opacityPanelPosition, setOpacityPanelPosition] = useState(
-    DEFAULT_OPACITY_PANEL_POSITION
-  );
-  const [opacityPanelOwnerRect, setOpacityPanelOwnerRect] =
-    useState<WidgetOwnerRect | null>(null);
-  const isAdjustingOpacityByPointerRef = useRef(false);
   const addEffectLayer = useWorkspaceStore((state) => state.addEffectLayer);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
@@ -300,20 +280,11 @@ export function LayersWidget() {
   const renameEffectLayer = useWorkspaceStore((state) => state.renameEffectLayer);
   const selectEffectLayer = useWorkspaceStore((state) => state.selectEffectLayer);
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
+  const setEffectLayerBlendMode = useWorkspaceStore((state) => state.setEffectLayerBlendMode);
   const setEffectLayerOpacity = useWorkspaceStore((state) => state.setEffectLayerOpacity);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const canDeleteLayer = effectLayers.length > 0 && Boolean(selectedLayerId);
   const selectedLayer = effectLayers.find((layer) => layer.id === selectedLayerId);
-
-  useEffect(() => {
-    if (!selectedLayer) {
-      setOpacityDraft("");
-      setIsOpacityPanelOpen(false);
-      return;
-    }
-
-    setOpacityDraft(formatOpacity(selectedLayer.opacity));
-  }, [selectedLayer?.id, selectedLayer?.opacity]);
 
   useEffect(() => {
     if (!editingLayerId) {
@@ -387,80 +358,49 @@ export function LayersWidget() {
     setEditingLayerId(null);
   };
 
-  const commitOpacityDraft = () => {
-    if (!selectedLayer) {
-      return;
-    }
-
-    const nextOpacity = parseOpacityInput(opacityDraft);
-
-    if (nextOpacity === null) {
-      setOpacityDraft(formatOpacity(selectedLayer.opacity));
-      return;
-    }
-
-    setEffectLayerOpacity(selectedLayer.id, nextOpacity);
-    setOpacityDraft(formatOpacity(nextOpacity));
-  };
-
-  const resetOpacityDraft = () => {
-    if (!selectedLayer) {
-      return;
-    }
-
-    setOpacityDraft(formatOpacity(selectedLayer.opacity));
-  };
-
-  const toggleOpacityPanel = (event: MouseEvent<HTMLButtonElement>) => {
-    const triggerRect = event.currentTarget.getBoundingClientRect();
-
-    setOpacityPanelPosition({
-      x: triggerRect.left - 128,
-      y: triggerRect.bottom + 6,
-    });
-    setOpacityPanelOwnerRect(rectToWidgetOwnerRect(triggerRect));
-    setIsOpacityPanelOpen((open) => !open);
-  };
-
   return (
     <Widget title="Layers" contentClassName="flex min-h-32 flex-col gap-2">
-      <div className="flex items-center justify-start gap-2 border-b pb-2">
-        <span className="text-xs">Opacity:</span>
-        <div className="flex min-w-0 items-center">
-          <Input
-            aria-label="Layer opacity value"
-            className="h-7 w-16 rounded-r-none border-r-0 bg-background px-2 font-mono text-xs"
+      <div className="flex items-center justify-between gap-2 border-b pb-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-xs">Blend:</span>
+          <Select
             disabled={!selectedLayer}
-            onBlur={commitOpacityDraft}
-            onChange={(event) => setOpacityDraft(event.target.value)}
-            onFocus={(event) => event.currentTarget.select()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitOpacityDraft();
-                event.currentTarget.blur();
-              }
-
-              if (event.key === "Escape") {
-                event.preventDefault();
-                resetOpacityDraft();
-                event.currentTarget.blur();
-              }
-            }}
-            value={opacityDraft}
-          />
-          <Button
-            aria-expanded={isOpacityPanelOpen}
-            aria-label="Open layer opacity slider"
-            className="h-7 rounded-l-none"
-            disabled={!selectedLayer}
-            onClick={toggleOpacityPanel}
-            size="icon-xs"
-            type="button"
-            variant="outline"
+            onValueChange={(value) =>
+              selectedLayer?.id &&
+              setEffectLayerBlendMode(selectedLayer.id, value as EffectLayerBlendMode)
+            }
+            value={selectedLayer?.blendMode ?? "normal"}
           >
-            <ChevronDown />
-          </Button>
+            <SelectTrigger
+              aria-label="Layer blend mode"
+              className="h-7 w-28 bg-background text-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {BLEND_MODE_OPTIONS.map((option) => (
+                  <SelectItem className="text-xs" key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-xs">Opacity:</span>
+          <SliderInput
+            ariaLabel="Layer opacity value"
+            disabled={!selectedLayer}
+            onInteractionEnd={commitHistoryTransaction}
+            onInteractionStart={beginHistoryTransaction}
+            onValueChange={(value, options) =>
+              selectedLayer?.id && setEffectLayerOpacity(selectedLayer.id, value, options)
+            }
+            sliderAriaLabel="Layer opacity slider"
+            value={selectedLayer?.opacity ?? 100}
+          />
         </div>
       </div>
 
@@ -490,43 +430,6 @@ export function LayersWidget() {
           />
         ))}
       </div>
-
-      {selectedLayer && isOpacityPanelOpen ? (
-        <Widget
-          className="w-56"
-          contentClassName="min-h-0 p-3"
-          floatingOwnerRect={opacityPanelOwnerRect ?? undefined}
-          floatingPosition={opacityPanelPosition}
-          onFloatingDismiss={() => setIsOpacityPanelOpen(false)}
-          showFloatingOwnerCallout
-          variant="floating"
-        >
-          <Slider
-            aria-label="Layer opacity slider"
-            max={100}
-            min={0}
-            onPointerCancel={() => {
-              isAdjustingOpacityByPointerRef.current = false;
-              commitHistoryTransaction();
-            }}
-            onPointerDown={() => {
-              isAdjustingOpacityByPointerRef.current = true;
-              beginHistoryTransaction();
-            }}
-            onValueChange={(value) =>
-              setEffectLayerOpacity(selectedLayer.id, value[0] ?? selectedLayer.opacity, {
-                history: isAdjustingOpacityByPointerRef.current ? "skip" : "checkpoint",
-              })
-            }
-            onValueCommit={() => {
-              isAdjustingOpacityByPointerRef.current = false;
-              commitHistoryTransaction();
-            }}
-            step={1}
-            value={[selectedLayer.opacity]}
-          />
-        </Widget>
-      ) : null}
 
       <div className="mt-auto flex items-center justify-between gap-1 border-t pt-2">
         <div className="flex items-center gap-1">

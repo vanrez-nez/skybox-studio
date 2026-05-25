@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import debounce from "lodash/debounce";
 import * as THREE from "three";
 
 import {
   type BakedSkyboxTexture,
   createTextureBakingSkyboxTexture,
 } from "@/processes/texture-baking";
+import type { TextureBakeWorkerResponse } from "@/processes/texture-baking.worker";
+import TextureBakingWorker from "@/processes/texture-baking.worker?worker";
 import {
   type GradientState,
   useWorkspaceStore,
@@ -22,6 +25,7 @@ type VectorTuple = [number, number, number];
 const INITIAL_CAMERA_ROTATION = new THREE.Euler(0.08, -0.35, 0, "YXZ");
 const AXIS_ANIMATION_DURATION_MS = 320;
 const AXIS_TOGGLE_DOT_THRESHOLD = 0.985;
+const SKYBOX_BAKE_DEBOUNCE_MS = 50;
 
 function quaternionToTuple(quaternion: THREE.Quaternion): QuaternionTuple {
   return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
@@ -80,7 +84,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     });
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    const initialSkyboxTexture = createTextureBakingSkyboxTexture(gradient);
+    const bakeWorker = new TextureBakingWorker();
+    let latestBakeRequestId = 0;
+    let disposed = false;
+    const skyboxTexture = createTextureBakingSkyboxTexture();
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     const pointerState = {
       id: -1,
@@ -90,8 +97,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       yaw: cameraRotation.y,
     };
 
-    scene.background = initialSkyboxTexture;
-    skyboxTextureRef.current = initialSkyboxTexture;
+    scene.background = skyboxTexture;
+    skyboxTextureRef.current = skyboxTexture;
     camera.position.set(0, 0, 0);
     camera.rotation.copy(cameraRotation);
     canvas.style.cursor = "grab";
@@ -126,15 +133,43 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       animationFrameRef.current = null;
     };
 
-    updateSkyboxRef.current = (nextGradient) => {
-      const previousTexture = skyboxTextureRef.current;
-      const nextTexture = createTextureBakingSkyboxTexture(nextGradient);
+    const sendSkyboxBake = debounce((id: number, nextGradient: GradientState) => {
+      bakeWorker.postMessage({
+        gradient: nextGradient,
+        id,
+      });
+    }, SKYBOX_BAKE_DEBOUNCE_MS);
+
+    const requestSkyboxBake = (nextGradient: GradientState) => {
+      latestBakeRequestId += 1;
+      sendSkyboxBake(latestBakeRequestId, nextGradient);
+    };
+
+    bakeWorker.onmessage = (event: MessageEvent<TextureBakeWorkerResponse>) => {
+      if (disposed || event.data.id !== latestBakeRequestId) {
+        return;
+      }
+
+      const currentTexture = skyboxTextureRef.current;
+
+      if (!currentTexture) {
+        return;
+      }
+
+      const nextTexture = createTextureBakingSkyboxTexture(undefined, {
+        data: new Uint8ClampedArray(event.data.data),
+        height: event.data.height,
+        width: event.data.width,
+      });
 
       scene.background = nextTexture;
       skyboxTextureRef.current = nextTexture;
-      previousTexture?.dispose();
+      currentTexture.dispose();
       render();
     };
+
+    updateSkyboxRef.current = requestSkyboxBake;
+    requestSkyboxBake(gradient);
 
     const applyCameraRotation = () => {
       cancelCameraAnimation();
@@ -299,6 +334,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     resize();
 
     return () => {
+      disposed = true;
       renderRef.current = null;
       updateSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
@@ -311,6 +347,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       canvas.removeEventListener("pointercancel", releasePointer);
       canvas.removeEventListener("lostpointercapture", releasePointer);
       resizeObserver.disconnect();
+      sendSkyboxBake.cancel();
+      bakeWorker.terminate();
       const currentSkyboxTexture = scene.background;
 
       if (currentSkyboxTexture instanceof THREE.Texture) {

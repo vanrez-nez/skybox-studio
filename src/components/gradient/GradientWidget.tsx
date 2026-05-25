@@ -1,4 +1,10 @@
-import { type KeyboardEvent, type PointerEvent, useEffect, useRef } from "react";
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+  useEffect,
+  useRef,
+} from "react";
 import { Trash2 } from "lucide-react";
 
 import { FloatingColorPicker } from "@/components/gradient/FloatingColorPicker";
@@ -43,6 +49,66 @@ function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
+function hexToRgb(color: string): [number, number, number] {
+  const hexColor = color.replace("#", "");
+
+  if (!/^[0-9a-fA-F]{6}$/.test(hexColor)) {
+    return [255, 255, 255];
+  }
+
+  return [0, 2, 4].map((offset) =>
+    Number.parseInt(hexColor.slice(offset, offset + 2), 16)
+  ) as [number, number, number];
+}
+
+function rgbToHex(color: [number, number, number]) {
+  return `#${color.map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mix(firstValue: number, secondValue: number, amount: number) {
+  return firstValue + (secondValue - firstValue) * amount;
+}
+
+function sampleStopColor(stops: GradientStop[], location: number) {
+  const sortedStops = sortStops(stops);
+  const firstStop = sortedStops[0];
+  const lastStop = sortedStops[sortedStops.length - 1];
+
+  if (!firstStop) {
+    return "#ffffff";
+  }
+
+  if (location <= firstStop.location) {
+    return firstStop.color;
+  }
+
+  if (lastStop && location >= lastStop.location) {
+    return lastStop.color;
+  }
+
+  for (let stopIndex = 0; stopIndex < sortedStops.length - 1; stopIndex += 1) {
+    const currentStop = sortedStops[stopIndex];
+    const nextStop = sortedStops[stopIndex + 1];
+
+    if (location < currentStop.location || location > nextStop.location) {
+      continue;
+    }
+
+    const span = nextStop.location - currentStop.location;
+    const localT = span <= 0 ? 0 : (location - currentStop.location) / span;
+    const currentColor = hexToRgb(currentStop.color);
+    const nextColor = hexToRgb(nextStop.color);
+
+    return rgbToHex([
+      mix(currentColor[0], nextColor[0], localT),
+      mix(currentColor[1], nextColor[1], localT),
+      mix(currentColor[2], nextColor[2], localT),
+    ]);
+  }
+
+  return lastStop?.color ?? firstStop.color;
+}
+
 function degreesToRadians(degrees: number) {
   return (degrees * Math.PI) / 180;
 }
@@ -59,6 +125,7 @@ export function GradientWidget() {
     move: (event: globalThis.PointerEvent) => void;
   } | null>(null);
   const gradient = useWorkspaceStore((state) => state.gradient);
+  const addGradientStop = useWorkspaceStore((state) => state.addGradientStop);
   const removeGradientStop = useWorkspaceStore((state) => state.removeGradientStop);
   const selectGradientStop = useWorkspaceStore((state) => state.selectGradientStop);
   const setGradientMaxAngle = useWorkspaceStore((state) => state.setGradientMaxAngle);
@@ -89,6 +156,24 @@ export function GradientWidget() {
     }
 
     updateGradientStop(id, { location: nextLocation });
+  };
+
+  const handleGradientTrackDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    const location = getLocationFromPointer(event.clientX);
+
+    if (
+      location === null ||
+      (target instanceof Element && target.closest('button[aria-label^="Gradient stop"]'))
+    ) {
+      return;
+    }
+
+    addGradientStop({
+      color: sampleStopColor(gradient.stops, location),
+      location,
+      opacity: selectedStop?.opacity ?? 100,
+    });
   };
 
   const clearStopDragListeners = () => {
@@ -252,7 +337,11 @@ export function GradientWidget() {
       <div>
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="h-10 px-3">
-            <div ref={gradientTrackRef} className="relative h-full">
+            <div
+              ref={gradientTrackRef}
+              className="relative h-full"
+              onDoubleClick={handleGradientTrackDoubleClick}
+            >
               <div
                 className="absolute top-3 right-0 left-0 h-3 rounded-full border"
                 style={{ background: getGradientBackground(gradient.stops) }}

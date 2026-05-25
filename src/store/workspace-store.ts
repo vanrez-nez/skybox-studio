@@ -52,6 +52,7 @@ type WorkspaceStore = {
   gradient: GradientState;
   lastMenuEvent: MenuEvent | null;
   addFieldGradientAnchor: (anchor: Omit<FieldGradientAnchor, "id">) => void;
+  addGradientStop: (stop: Omit<GradientStop, "id">) => void;
   emitMenuEvent: (id: MenuEventId) => void;
   randomizeFieldGradient: () => void;
   removeFieldGradientAnchor: (id: string) => void;
@@ -167,6 +168,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
           ...state.fieldGradient,
           anchors: [...state.fieldGradient.anchors, nextAnchor],
           selectedAnchorId: nextAnchor.id,
+        },
+      };
+    }),
+  addGradientStop: (stop) =>
+    set((state) => {
+      const nextStop = {
+        ...stop,
+        id: `stop-${Date.now()}`,
+        location: clampPercent(stop.location),
+        opacity: clampPercent(stop.opacity),
+      };
+
+      return {
+        gradient: {
+          ...state.gradient,
+          selectedStopId: nextStop.id,
+          stops: [...state.gradient.stops, nextStop],
         },
       };
     }),

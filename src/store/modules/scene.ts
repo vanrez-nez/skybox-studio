@@ -16,10 +16,12 @@ export type SceneSlice = {
   lastMenuEvent: MenuEvent | null;
   sceneRenderMode: SceneRenderMode;
   showOrientationGizmo: boolean;
+  showSkyGeometry: boolean;
   emitMenuEvent: (id: MenuEventId) => void;
   setActiveView: (view: WorkspaceView) => void;
   setSceneRenderMode: (mode: SceneRenderMode) => void;
   setShowOrientationGizmo: (visible: boolean) => void;
+  setShowSkyGeometry: (visible: boolean) => void;
 };
 
 export const workspaceViews: Array<{ id: WorkspaceView; label: string }> = [
@@ -37,8 +39,10 @@ export const createSceneSlice: StateCreator<
   lastMenuEvent: null,
   sceneRenderMode: "live",
   showOrientationGizmo: true,
+  showSkyGeometry: false,
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
   setActiveView: (view) => set({ activeView: view }),
   setSceneRenderMode: (mode) => set({ sceneRenderMode: mode }),
   setShowOrientationGizmo: (visible) => set({ showOrientationGizmo: visible }),
+  setShowSkyGeometry: (visible) => set({ showSkyGeometry: visible }),
 });

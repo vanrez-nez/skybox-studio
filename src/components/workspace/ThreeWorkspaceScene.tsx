@@ -39,6 +39,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderRef = useRef<(() => void) | null>(null);
   const skyboxTextureRef = useRef<BakedSkyboxTexture | null>(null);
+  const setSkyGeometryVisibleRef = useRef<((visible: boolean) => void) | null>(null);
   const updateSkyboxRef = useRef<
     ((nextManifest: SkyboxManifestV1, nextRenderMode: SceneRenderMode) => void) | null
   >(null);
@@ -54,6 +55,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   );
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
+  const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
   const skyboxManifest = useMemo(
     () => createSkyboxManifest(effectLayers, previewEffectLayerBlendMode),
     [effectLayers, previewEffectLayerBlendMode]
@@ -70,6 +72,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   useEffect(() => {
     renderRef.current?.();
   }, [mode]);
+
+  useEffect(() => {
+    setSkyGeometryVisibleRef.current?.(showSkyGeometry);
+  }, [showSkyGeometry]);
 
   useEffect(() => {
     if (!updateSkyboxRef.current) {
@@ -100,6 +106,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     let rendererReady = false;
     const skyboxTexture = createTextureBakingSkyboxTexture();
     const liveSkybox = new Skybox().setRenderer(renderer).fromManifest(skyboxManifest).load();
+    const skyGeometry = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        depthTest: false,
+        depthWrite: false,
+        opacity: 0.55,
+        toneMapped: false,
+        transparent: true,
+      })
+    );
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     const pointerState = {
       id: -1,
@@ -116,6 +133,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     canvas.style.touchAction = "none";
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    skyGeometry.renderOrder = 10;
+    skyGeometry.visible = showSkyGeometry;
+    scene.add(skyGeometry);
 
     const render = () => {
       if (!rendererReady || disposed) {
@@ -128,6 +148,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     renderRef.current = render;
+    setSkyGeometryVisibleRef.current = (visible) => {
+      skyGeometry.visible = visible;
+      render();
+    };
 
     const syncGizmoOrientation = () => {
       setGizmoOrientation(quaternionToTuple(camera.quaternion));
@@ -449,6 +473,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     return () => {
       disposed = true;
       renderRef.current = null;
+      setSkyGeometryVisibleRef.current = null;
       updateSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
       resetOrientationRef.current = null;
@@ -469,6 +494,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       sendSkyboxBake.cancel();
       terminateBakeWorker();
       liveSkybox.dispose();
+      skyGeometry.geometry.dispose();
+      skyGeometry.material.dispose();
       const currentSkyboxTexture = scene.background;
 
       if (currentSkyboxTexture instanceof THREE.Texture) {

@@ -14,7 +14,9 @@ export function SceneWidget() {
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const setSceneRenderMode = useWorkspaceStore((state) => state.setSceneRenderMode);
   const setShowOrientationGizmo = useWorkspaceStore((state) => state.setShowOrientationGizmo);
+  const setShowSkyGeometry = useWorkspaceStore((state) => state.setShowSkyGeometry);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
+  const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
 
   return (
     <Widget title="Scene" contentClassName="flex flex-col gap-3">
@@ -24,6 +26,16 @@ export function SceneWidget() {
           aria-label="Show orientation gizmo"
           checked={showOrientationGizmo}
           onCheckedChange={setShowOrientationGizmo}
+          size="sm"
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs">Sky geometry visible</span>
+        <Switch
+          aria-label="Sky geometry visible"
+          checked={showSkyGeometry}
+          onCheckedChange={setShowSkyGeometry}
           size="sm"
         />
       </div>

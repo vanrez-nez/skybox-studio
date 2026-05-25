@@ -4,15 +4,24 @@ import { HotkeyManager } from "@tanstack/hotkeys";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   Menubar,
+  MenubarCheckboxItem,
   MenubarContent,
   MenubarItem,
   MenubarMenu,
+  MenubarRadioGroup,
+  MenubarRadioItem,
+  MenubarSeparator,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
   MenubarTrigger,
 } from "@/components/ui/menubar";
 import { useWorkspaceStore } from "@/store/app";
 import {
   type MenuCommandId,
   type MenuId,
+  type SceneRenderMode,
+  type SkyGeometryType,
 } from "@/store/modules/scene";
 
 type AppMenuItem = {
@@ -38,6 +47,8 @@ const menuItems: Array<{
     items: fileMenuItems,
   },
   { id: "edit", label: "Edit" },
+  { id: "view", label: "View" },
+  { id: "sky", label: "Sky" },
 ];
 
 function getModifierKeyLabel() {
@@ -64,6 +75,16 @@ export function AppMenu() {
   const redoHistory = useWorkspaceStore((state) => state.redoHistory);
   const canUndo = useWorkspaceStore((state) => state.historyPast.length > 0);
   const canRedo = useWorkspaceStore((state) => state.historyFuture.length > 0);
+  const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
+  const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
+  const showGroundPlaneHelper = useWorkspaceStore((state) => state.showGroundPlaneHelper);
+  const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
+  const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
+  const setSceneRenderMode = useWorkspaceStore((state) => state.setSceneRenderMode);
+  const setSkyGeometryType = useWorkspaceStore((state) => state.setSkyGeometryType);
+  const setShowGroundPlaneHelper = useWorkspaceStore((state) => state.setShowGroundPlaneHelper);
+  const setShowOrientationGizmo = useWorkspaceStore((state) => state.setShowOrientationGizmo);
+  const setShowSkyGeometry = useWorkspaceStore((state) => state.setShowSkyGeometry);
   const undoRef = useRef(undoHistory);
   const redoRef = useRef(redoHistory);
   const modifierKeyLabel = getModifierKeyLabel();
@@ -137,6 +158,63 @@ export function AppMenu() {
     emitMenuEvent(id);
   }
 
+  function renderViewMenu() {
+    return (
+      <MenubarContent>
+        <MenubarCheckboxItem
+          checked={showOrientationGizmo}
+          onCheckedChange={setShowOrientationGizmo}
+        >
+          Orientation Gizmo
+        </MenubarCheckboxItem>
+        <MenubarCheckboxItem
+          checked={showSkyGeometry}
+          onCheckedChange={setShowSkyGeometry}
+        >
+          Sky Geometry
+        </MenubarCheckboxItem>
+        <MenubarCheckboxItem
+          checked={showGroundPlaneHelper}
+          onCheckedChange={setShowGroundPlaneHelper}
+        >
+          Ground Plane Helper
+        </MenubarCheckboxItem>
+      </MenubarContent>
+    );
+  }
+
+  function renderSkyMenu() {
+    return (
+      <MenubarContent>
+        <MenubarSub>
+          <MenubarSubTrigger>Geometry</MenubarSubTrigger>
+          <MenubarSubContent>
+            <MenubarRadioGroup
+              onValueChange={(value) => setSkyGeometryType(value as SkyGeometryType)}
+              value={skyGeometryType}
+            >
+              <MenubarRadioItem value="box">Box</MenubarRadioItem>
+              <MenubarRadioItem value="sphere">Sphere</MenubarRadioItem>
+            </MenubarRadioGroup>
+          </MenubarSubContent>
+        </MenubarSub>
+        <MenubarSeparator />
+        <MenubarSub>
+          <MenubarSubTrigger>Mode</MenubarSubTrigger>
+          <MenubarSubContent>
+            <MenubarRadioGroup
+              onValueChange={(value) => setSceneRenderMode(value as SceneRenderMode)}
+              value={sceneRenderMode}
+            >
+              <MenubarRadioItem value="live">Live</MenubarRadioItem>
+              <MenubarRadioItem value="texture-baked">Texture Baked</MenubarRadioItem>
+            </MenubarRadioGroup>
+          </MenubarSubContent>
+        </MenubarSub>
+      </MenubarContent>
+    );
+  }
+
   return (
     <Menubar
       aria-label="Application menu"
@@ -150,7 +228,7 @@ export function AppMenu() {
           >
             {item.label}
           </MenubarTrigger>
-          {item.items || item.id === "edit" ? (
+          {item.id === "view" ? renderViewMenu() : item.id === "sky" ? renderSkyMenu() : item.items || item.id === "edit" ? (
             <MenubarContent>
               {(item.id === "edit" ? editMenuItems : item.items ?? []).map((menuItem) => (
                 <MenubarItem

@@ -38,11 +38,21 @@ function easeOutCubic(progress: number) {
   return 1 - (1 - progress) ** 3;
 }
 
+function createGroundPlaneHelperGeometry() {
+  const planeGeometry = new THREE.PlaneGeometry(1.8, 1.8, 8, 8);
+  const wireGeometry = new THREE.WireframeGeometry(planeGeometry);
+
+  planeGeometry.dispose();
+
+  return wireGeometry;
+}
+
 export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderRef = useRef<(() => void) | null>(null);
   const skyboxTextureRef = useRef<BakedSkyboxTexture | null>(null);
+  const setGroundPlaneHelperVisibleRef = useRef<((visible: boolean) => void) | null>(null);
   const setSkyGeometryVisibleRef = useRef<((visible: boolean) => void) | null>(null);
   const updateSkyboxRef = useRef<
     ((nextManifest: SkyboxManifest, nextRenderMode: SceneRenderMode) => void) | null
@@ -59,6 +69,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   );
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
+  const showGroundPlaneHelper = useWorkspaceStore((state) => state.showGroundPlaneHelper);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
   const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
   const skyboxManifest = useMemo(
@@ -81,6 +92,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   useEffect(() => {
     setSkyGeometryVisibleRef.current?.(showSkyGeometry);
   }, [showSkyGeometry]);
+
+  useEffect(() => {
+    setGroundPlaneHelperVisibleRef.current?.(showGroundPlaneHelper);
+  }, [showGroundPlaneHelper]);
 
   useEffect(() => {
     if (!updateSkyboxRef.current) {
@@ -125,6 +140,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         transparent: true,
       })
     );
+    const groundPlaneHelper = new THREE.LineSegments(
+      createGroundPlaneHelperGeometry(),
+      new THREE.LineBasicMaterial({
+        color: 0x22c55e,
+        depthTest: false,
+        depthWrite: false,
+        opacity: 0.45,
+        toneMapped: false,
+        transparent: true,
+      })
+    );
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     const pointerState = {
       id: -1,
@@ -143,7 +169,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     skyGeometry.renderOrder = 10;
     skyGeometry.visible = showSkyGeometry;
+    groundPlaneHelper.position.set(0, -0.1, 0);
+    groundPlaneHelper.rotation.x = -Math.PI / 2;
+    groundPlaneHelper.renderOrder = 9;
+    groundPlaneHelper.visible = showGroundPlaneHelper;
     scene.add(skyGeometry);
+    scene.add(groundPlaneHelper);
 
     const render = () => {
       if (!rendererReady || disposed) {
@@ -158,6 +189,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     renderRef.current = render;
     setSkyGeometryVisibleRef.current = (visible) => {
       skyGeometry.visible = visible;
+      render();
+    };
+    setGroundPlaneHelperVisibleRef.current = (visible) => {
+      groundPlaneHelper.visible = visible;
       render();
     };
 
@@ -508,6 +543,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     return () => {
       disposed = true;
       renderRef.current = null;
+      setGroundPlaneHelperVisibleRef.current = null;
       setSkyGeometryVisibleRef.current = null;
       updateSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
@@ -529,6 +565,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       sendSkyboxBake.cancel();
       terminateBakeWorker();
       liveSkybox.dispose();
+      groundPlaneHelper.geometry.dispose();
+      groundPlaneHelper.material.dispose();
       skyGeometry.geometry.dispose();
       skyGeometry.material.dispose();
       referencedSkyboxTexture?.dispose();

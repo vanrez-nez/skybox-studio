@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 import {
   createLayersSlice,
@@ -32,6 +33,16 @@ export type HistorySlice = {
 };
 
 export type WorkspaceStore = SceneSlice & LayersSlice & HistorySlice;
+
+type PersistedWorkspacePreferences = Pick<
+  WorkspaceStore,
+  | "activeView"
+  | "sceneRenderMode"
+  | "skyGeometryType"
+  | "showGroundPlaneHelper"
+  | "showOrientationGizmo"
+  | "showSkyGeometry"
+>;
 
 function captureHistorySnapshot(
   participants: Array<HistoryParticipant<WorkspaceStore>>,
@@ -147,8 +158,25 @@ const historyParticipants: Array<HistoryParticipant<WorkspaceStore>> = [
   layersHistoryParticipant,
 ];
 
-export const useWorkspaceStore = create<WorkspaceStore>()((...storeApi) => ({
-  ...createSceneSlice(...storeApi),
-  ...createHistorySlice(historyParticipants)(...storeApi),
-  ...createLayersSlice(...storeApi),
-}));
+export const useWorkspaceStore = create<WorkspaceStore>()(
+  persist(
+    (...storeApi) => ({
+      ...createSceneSlice(...storeApi),
+      ...createHistorySlice(historyParticipants)(...storeApi),
+      ...createLayersSlice(...storeApi),
+    }),
+    {
+      name: "skybox-studio-preferences",
+      partialize: (state): PersistedWorkspacePreferences => ({
+        activeView: state.activeView,
+        sceneRenderMode: state.sceneRenderMode,
+        skyGeometryType: state.skyGeometryType,
+        showGroundPlaneHelper: state.showGroundPlaneHelper,
+        showOrientationGizmo: state.showOrientationGizmo,
+        showSkyGeometry: state.showSkyGeometry,
+      }),
+      storage: createJSONStorage(() => localStorage),
+      version: 1,
+    }
+  )
+);

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Widget } from "@/components/widgets/Widget";
+import { fieldGradientLayerAdapter } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import {
   type FieldGradientAnchor,
@@ -19,6 +20,8 @@ import {
   type FieldGradientState,
   useWorkspaceStore,
 } from "@/store/workspace-store";
+
+export const fieldGradientEffectLayerAdapter = fieldGradientLayerAdapter;
 
 type Rgb = [number, number, number];
 

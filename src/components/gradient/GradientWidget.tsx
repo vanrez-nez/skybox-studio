@@ -19,12 +19,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Widget } from "@/components/widgets/Widget";
+import { gradientLayerAdapter } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import {
   type GradientMode,
   type GradientStop,
   useWorkspaceStore,
 } from "@/store/workspace-store";
+
+export const gradientEffectLayerAdapter = gradientLayerAdapter;
 
 function sortStops(stops: GradientStop[]) {
   return [...stops].sort((firstStop, secondStop) => firstStop.location - secondStop.location);

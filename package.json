@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@atlaskit/pragmatic-drag-and-drop": "^1.8.1",
+    "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@melloware/coloris": "^0.25.0",
     "class-variance-authority": "^0.7.1",

@@ -9,16 +9,12 @@ import type { EffectLayerBlendModePreview } from "@/store/modules/layers";
 function layerToManifestLayer(
   layer: EffectLayer,
   previewBlendMode?: EffectLayerBlendModePreview | null
-): SkyboxManifestLayer | null {
-  if (layer.type === "image") {
-    return null;
-  }
-
+): SkyboxManifestLayer {
   const blendMode =
     previewBlendMode?.layerId === layer.id ? previewBlendMode.blendMode : layer.blendMode;
 
-  return layer.type === "gradient"
-    ? {
+  if (layer.type === "gradient") {
+    return {
         blendMode,
         enabled: layer.enabled,
         id: layer.id,
@@ -34,26 +30,46 @@ function layerToManifestLayer(
           })),
         },
         type: "gradient",
-      }
-    : {
-        blendMode,
-        enabled: layer.enabled,
-        id: layer.id,
-        name: layer.name,
-        opacity: layer.opacity,
-        params: {
-          amplitude: layer.params.amplitude,
-          anchors: layer.params.anchors.map((anchor) => ({
-            color: anchor.color,
-            x: anchor.x,
-            y: anchor.y,
-          })),
-          frequency: layer.params.frequency,
-          mode: layer.params.mode,
-          power: layer.params.power,
-        },
-        type: "field-gradient",
       };
+  }
+
+  if (layer.type === "field-gradient") {
+    return {
+      blendMode,
+      enabled: layer.enabled,
+      id: layer.id,
+      name: layer.name,
+      opacity: layer.opacity,
+      params: {
+        amplitude: layer.params.amplitude,
+        anchors: layer.params.anchors.map((anchor) => ({
+          color: anchor.color,
+          x: anchor.x,
+          y: anchor.y,
+        })),
+        frequency: layer.params.frequency,
+        mode: layer.params.mode,
+        power: layer.params.power,
+      },
+      type: "field-gradient",
+    };
+  }
+
+  return {
+    blendMode,
+    enabled: layer.enabled,
+    id: layer.id,
+    name: layer.name,
+    opacity: layer.opacity,
+    params: {
+      height: layer.params.height,
+      pixels: layer.params.pixels,
+      placement: layer.params.placement,
+      src: layer.params.src,
+      width: layer.params.width,
+    },
+    type: "image",
+  };
 }
 
 export function createSkyboxManifest(
@@ -67,11 +83,7 @@ export function createSkyboxManifest(
       order: "bottom-to-top",
     },
     geometry,
-    nodes: effectLayers.flatMap((layer) => {
-      const manifestLayer = layerToManifestLayer(layer, previewBlendMode);
-
-      return manifestLayer ? [manifestLayer] : [];
-    }),
+    nodes: effectLayers.map((layer) => layerToManifestLayer(layer, previewBlendMode)),
     version: 2,
   };
 }

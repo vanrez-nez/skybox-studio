@@ -54,8 +54,19 @@ export type ImageState = {
   height: number;
   loadedAt: number | null;
   mimeType: string;
+  pixels: number[] | null;
+  placement: ImagePlacement | null;
   src: string | null;
   width: number;
+};
+
+export type ImagePlacement = {
+  angularHeight: number;
+  angularWidth: number;
+  centerDirection: [number, number, number];
+  projection: "angular-decal";
+  tangentX: [number, number, number];
+  tangentY: [number, number, number];
 };
 
 export type LayersHistorySnapshot = {
@@ -108,6 +119,11 @@ export type LayersSlice = {
   setGradientMode: (mode: GradientMode) => void;
   setGradientRotation: (rotation: number, options?: HistoryUpdateOptions) => void;
   setImage: (image: ImageState) => void;
+  setImagePlacement: (
+    id: string,
+    placement: ImagePlacement | null,
+    options?: HistoryUpdateOptions
+  ) => void;
   toggleEffectLayerEnabled: (id: string) => void;
   updateFieldGradientAnchor: (
     id: string,
@@ -190,6 +206,8 @@ export function createDefaultImageState(): ImageState {
     height: 0,
     loadedAt: null,
     mimeType: "",
+    pixels: null,
+    placement: null,
     src: null,
     width: 0,
   };
@@ -371,7 +389,7 @@ export const createLayersSlice: StateCreator<
       const nextLayer = createEffectLayer(type, layerTypeCount);
 
       return {
-        effectLayers: [...state.effectLayers, nextLayer],
+        effectLayers: [nextLayer, ...state.effectLayers],
         selectedLayerId: nextLayer.id,
         ...getHistoryPatch(state),
         ...(nextLayer.type === "gradient"
@@ -837,6 +855,29 @@ export const createLayersSlice: StateCreator<
       image: cloneImageState(image),
       ...getHistoryPatch(state),
     })),
+  setImagePlacement: (id, placement, options) =>
+    set((state) => {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
+
+      if (layer?.type !== "image") {
+        return state;
+      }
+
+      const image = {
+        ...layer.params,
+        placement,
+      };
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === id && effectLayer.type === "image"
+            ? { ...effectLayer, params: cloneImageState(image) }
+            : effectLayer
+        ),
+        ...(state.selectedLayerId === id ? { image: cloneImageState(image) } : {}),
+        ...getHistoryPatch(state, options),
+      };
+    }),
   toggleEffectLayerEnabled: (id) =>
     set((state) => {
       if (!state.effectLayers.some((layer) => layer.id === id)) {

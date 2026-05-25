@@ -45,15 +45,10 @@ function readFileAsDataUrl(file: File) {
 }
 
 function getImageDimensions(src: string) {
-  return new Promise<{ height: number; width: number }>((resolve, reject) => {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const imageElement = new window.Image();
 
-    imageElement.addEventListener("load", () =>
-      resolve({
-        height: imageElement.naturalHeight,
-        width: imageElement.naturalWidth,
-      })
-    );
+    imageElement.addEventListener("load", () => resolve(imageElement));
     imageElement.addEventListener("error", () => reject(new Error("Image dimensions could not be read.")));
     imageElement.src = src;
   });
@@ -102,15 +97,17 @@ export function ImageWidget() {
     }
 
     const src = await readFileAsDataUrl(file);
-    const dimensions = await getImageDimensions(src);
+    const imageElement = await getImageDimensions(src);
     const nextImage: ImageState = {
       byteSize: file.size,
       fileName: file.name || "Pasted image",
-      height: dimensions.height,
+      height: imageElement.naturalHeight,
       loadedAt: Date.now(),
       mimeType: file.type,
+      pixels: null,
+      placement: image.placement,
       src,
-      width: dimensions.width,
+      width: imageElement.naturalWidth,
     };
 
     setImage(nextImage);

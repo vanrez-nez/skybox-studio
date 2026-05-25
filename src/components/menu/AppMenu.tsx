@@ -204,10 +204,10 @@ export function AppMenu() {
           <MenubarSubContent>
             <MenubarRadioGroup
               onValueChange={(value) => setSceneRenderMode(value as SceneRenderMode)}
-              value={sceneRenderMode}
+              value={sceneRenderMode === "texture-baked" ? "live" : sceneRenderMode}
             >
               <MenubarRadioItem value="live">Live</MenubarRadioItem>
-              <MenubarRadioItem value="texture-baked">Texture Baked</MenubarRadioItem>
+              <MenubarRadioItem disabled value="texture-baked">Texture Baked</MenubarRadioItem>
             </MenubarRadioGroup>
           </MenubarSubContent>
         </MenubarSub>

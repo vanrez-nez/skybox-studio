@@ -81,8 +81,73 @@ export function cloneFieldGradientState(fieldGradient: FieldGradientState): Fiel
   };
 }
 
+function normalizeTuple(value: unknown, fallback: [number, number, number]): [number, number, number] {
+  if (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    value.every((component) => typeof component === "number" && Number.isFinite(component))
+  ) {
+    const length = Math.hypot(value[0], value[1], value[2]);
+
+    if (length > 0) {
+      return [value[0] / length, value[1] / length, value[2] / length];
+    }
+  }
+
+  return fallback;
+}
+
+function cloneImagePlacement(placement: ImageState["placement"]): ImageState["placement"] {
+  if (!placement) {
+    return null;
+  }
+
+  const rawPlacement = placement as unknown as {
+    angularHeight?: number;
+    angularWidth?: number;
+    center?: [number, number, number];
+    centerDirection?: [number, number, number];
+    height?: number;
+    normal?: [number, number, number];
+    projection?: string;
+    tangentX?: [number, number, number];
+    tangentY?: [number, number, number];
+    width?: number;
+  };
+  const centerDirection = normalizeTuple(
+    rawPlacement.centerDirection ?? rawPlacement.normal ?? rawPlacement.center,
+    [0, 0, -1]
+  );
+  const tangentX = normalizeTuple(rawPlacement.tangentX, [1, 0, 0]);
+  const tangentY = normalizeTuple(rawPlacement.tangentY, [0, 1, 0]);
+  const legacyDistance = Array.isArray(rawPlacement.center)
+    ? Math.max(0.0001, Math.hypot(rawPlacement.center[0], rawPlacement.center[1], rawPlacement.center[2]))
+    : 1;
+  const angularWidth =
+    typeof rawPlacement.angularWidth === "number"
+      ? rawPlacement.angularWidth
+      : 2 * Math.atan(Math.max(0.0001, rawPlacement.width ?? 0.4) / (2 * legacyDistance));
+  const angularHeight =
+    typeof rawPlacement.angularHeight === "number"
+      ? rawPlacement.angularHeight
+      : 2 * Math.atan(Math.max(0.0001, rawPlacement.height ?? 0.3) / (2 * legacyDistance));
+
+  return {
+    angularHeight,
+    angularWidth,
+    centerDirection,
+    projection: "angular-decal",
+    tangentX,
+    tangentY,
+  };
+}
+
 export function cloneImageState(image: ImageState): ImageState {
-  return { ...image };
+  return {
+    ...image,
+    pixels: image.pixels ? [...image.pixels] : null,
+    placement: cloneImagePlacement(image.placement),
+  };
 }
 
 export const gradientLayerAdapter: EffectLayerAdapter<"gradient", GradientState> = {

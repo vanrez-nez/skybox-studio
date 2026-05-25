@@ -49,7 +49,7 @@ export const createSceneSlice: StateCreator<
   showSkyGeometry: false,
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
   setActiveView: (view) => set({ activeView: view }),
-  setSceneRenderMode: (mode) => set({ sceneRenderMode: mode }),
+  setSceneRenderMode: (mode) => set({ sceneRenderMode: mode === "texture-baked" ? "live" : mode }),
   setSkyGeometryType: (type) => set({ skyGeometryType: type }),
   setShowGroundPlaneHelper: (visible) => set({ showGroundPlaneHelper: visible }),
   setShowOrientationGizmo: (visible) => set({ showOrientationGizmo: visible }),

@@ -37,7 +37,12 @@ export type WorkspaceStore = SceneSlice & LayersSlice & HistorySlice;
 type PersistedWorkspacePreferences = Pick<
   WorkspaceStore,
   | "activeView"
+  | "effectLayers"
+  | "fieldGradient"
+  | "gradient"
+  | "image"
   | "sceneRenderMode"
+  | "selectedLayerId"
   | "skyGeometryType"
   | "showGroundPlaneHelper"
   | "showOrientationGizmo"
@@ -166,17 +171,22 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       ...createLayersSlice(...storeApi),
     }),
     {
-      name: "skybox-studio-preferences",
+      name: "skybox-studio-session",
       partialize: (state): PersistedWorkspacePreferences => ({
         activeView: state.activeView,
-        sceneRenderMode: state.sceneRenderMode,
+        effectLayers: state.effectLayers,
+        fieldGradient: state.fieldGradient,
+        gradient: state.gradient,
+        image: state.image,
+        sceneRenderMode: state.sceneRenderMode === "texture-baked" ? "live" : state.sceneRenderMode,
+        selectedLayerId: state.selectedLayerId,
         skyGeometryType: state.skyGeometryType,
         showGroundPlaneHelper: state.showGroundPlaneHelper,
         showOrientationGizmo: state.showOrientationGizmo,
         showSkyGeometry: state.showSkyGeometry,
       }),
-      storage: createJSONStorage(() => localStorage),
-      version: 1,
+      storage: createJSONStorage(() => sessionStorage),
+      version: 2,
     }
   )
 );

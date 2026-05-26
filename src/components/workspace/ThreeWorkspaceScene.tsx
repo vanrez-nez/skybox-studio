@@ -382,6 +382,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         const texture = new THREE.Texture(imageElement);
         const src = layer.params.src;
 
+        configureImageTexture(texture);
+        imageTextureRecords.set(layer.id, {
+          ready: false,
+          src,
+          texture,
+        });
+
         imageElement.addEventListener("load", () => {
           const record = imageTextureRecords.get(layer.id);
 
@@ -412,16 +419,15 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
             render();
           }
         });
+
         imageElement.src = src;
-
-        configureImageTexture(texture);
-        imageTextureRecords.set(layer.id, {
-          ready: imageElement.complete && imageElement.naturalWidth > 0,
-          src,
-          texture,
-        });
-
         if (imageElement.complete && imageElement.naturalWidth > 0) {
+          const record = imageTextureRecords.get(layer.id);
+
+          if (record && record.src === src) {
+            record.ready = true;
+          }
+
           texture.needsUpdate = true;
           window.queueMicrotask(() => {
             if (!disposed) {

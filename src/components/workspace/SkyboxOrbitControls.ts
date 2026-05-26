@@ -5,7 +5,7 @@ type SkyboxOrbitControlsListener = () => void;
 
 const EPSILON = 0.000001;
 const DEFAULT_DAMPING_FACTOR = 0.08;
-const DEFAULT_ROTATE_SPEED = 0.006;
+const DEFAULT_ROTATE_SPEED = 0.001;
 const RIGHT_MOUSE_BUTTON = 2;
 
 const worldUp = new THREE.Vector3(0, 1, 0);

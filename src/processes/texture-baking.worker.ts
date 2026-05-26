@@ -1,4 +1,12 @@
-import { bakeSkyboxImageData, type SkyboxManifest } from "@/runtime/index";
+import {
+  bakeSkyboxImageData,
+  migrateManifestToV2,
+  type SkyboxImageParams,
+  type SkyboxManifest,
+  type SkyboxManifestLayer,
+  type SkyboxManifestNode,
+  type SkyboxManifestV2,
+} from "@/runtime/index";
 
 export type TextureBakeWorkerRequest = {
   id: number;
@@ -7,10 +15,11 @@ export type TextureBakeWorkerRequest = {
 };
 
 export type TextureBakeWorkerResponse = {
-  data: ArrayBuffer;
-  height: number;
+  data?: ArrayBuffer;
+  error?: string;
+  height?: number;
   id: number;
-  width: number;
+  width?: number;
 };
 
 type TextureBakeWorkerScope = {
@@ -20,16 +29,93 @@ type TextureBakeWorkerScope = {
 
 const workerSelf = self as unknown as TextureBakeWorkerScope;
 
-workerSelf.onmessage = (event: MessageEvent<TextureBakeWorkerRequest>) => {
-  const bakedImage = bakeSkyboxImageData(event.data.manifest, {
-    width: event.data.width,
-  });
-  const response: TextureBakeWorkerResponse = {
-    data: bakedImage.data.buffer,
-    height: bakedImage.height,
-    id: event.data.id,
-    width: bakedImage.width,
+async function decodeImageParams(params: SkyboxImageParams): Promise<SkyboxImageParams> {
+  if (params.pixels || !params.src) {
+    return params;
+  }
+
+  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas === "undefined") {
+    throw new Error("Image decoding is not available in this worker.");
+  }
+
+  const response = await fetch(params.src);
+  const blob = await response.blob();
+  const imageBitmap = await createImageBitmap(blob);
+  const width = params.width || imageBitmap.width;
+  const height = params.height || imageBitmap.height;
+  const canvas = new OffscreenCanvas(width, height);
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    imageBitmap.close();
+    throw new Error("Image pixels could not be decoded.");
+  }
+
+  context.drawImage(imageBitmap, 0, 0, width, height);
+  imageBitmap.close();
+
+  return {
+    ...params,
+    height,
+    pixels: context.getImageData(0, 0, width, height).data as unknown as number[],
+    width,
+  };
+}
+
+async function resolveNodeImages(node: SkyboxManifestNode): Promise<SkyboxManifestNode> {
+  if (node.type === "group") {
+    return {
+      ...node,
+      children: await Promise.all(node.children.map(resolveNodeImages)),
+    };
+  }
+
+  if (node.type !== "image") {
+    return node;
+  }
+
+  const layer: SkyboxManifestLayer = {
+    ...node,
+    params: await decodeImageParams(node.params),
   };
 
-  workerSelf.postMessage(response, [response.data]);
+  return layer;
+}
+
+async function resolveManifestImages(manifest: SkyboxManifest): Promise<SkyboxManifestV2> {
+  const migratedManifest = migrateManifestToV2(manifest);
+
+  return {
+    ...migratedManifest,
+    nodes: await Promise.all(migratedManifest.nodes.map(resolveNodeImages)),
+  };
+}
+
+workerSelf.onmessage = (event: MessageEvent<TextureBakeWorkerRequest>) => {
+  void (async () => {
+    try {
+      const manifest = await resolveManifestImages(event.data.manifest);
+      const bakedImage = bakeSkyboxImageData(manifest, {
+        cache: false,
+        width: event.data.width,
+      });
+      const data = bakedImage.data.buffer;
+      const response: TextureBakeWorkerResponse = {
+        data,
+        height: bakedImage.height,
+        id: event.data.id,
+        width: bakedImage.width,
+      };
+
+      workerSelf.postMessage(response, [data]);
+    } catch (error) {
+      workerSelf.postMessage(
+        {
+          error: error instanceof Error ? error.message : "Skybox export failed.",
+          id: event.data.id,
+        },
+        []
+      );
+    }
+  })();
 };

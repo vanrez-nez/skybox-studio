@@ -154,8 +154,8 @@ function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
-function wrapUnit(value: number) {
-  return ((value % 1) + 1) % 1;
+function clampUnit(value: number) {
+  return Math.min(1, Math.max(0, value));
 }
 
 function clampRange(value: number, min: number, max: number) {
@@ -409,8 +409,8 @@ export const createLayersSlice: StateCreator<
       const nextAnchor = {
         ...anchor,
         id: `field-${Date.now()}`,
-        x: wrapUnit(anchor.x),
-        y: wrapUnit(anchor.y),
+        x: clampUnit(anchor.x),
+        y: clampUnit(anchor.y),
       };
 
       const fieldGradient = {
@@ -906,8 +906,8 @@ export const createLayersSlice: StateCreator<
             ? {
                 ...anchor,
                 ...update,
-                x: update.x === undefined ? anchor.x : wrapUnit(update.x),
-                y: update.y === undefined ? anchor.y : wrapUnit(update.y),
+                x: update.x === undefined ? anchor.x : clampUnit(update.x),
+                y: update.y === undefined ? anchor.y : clampUnit(update.y),
               }
             : anchor
         ),

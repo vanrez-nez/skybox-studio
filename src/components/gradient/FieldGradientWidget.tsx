@@ -27,8 +27,7 @@ type Rgb = [number, number, number];
 
 type PreparedFieldAnchor = {
   color: Rgb;
-  x: number;
-  y: number;
+  direction: Rgb;
 };
 
 type FieldSliderProps = {
@@ -49,10 +48,6 @@ function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
 }
 
-function wrapUnit(value: number) {
-  return ((value % 1) + 1) % 1;
-}
-
 function parseHexColor(color: string): Rgb {
   const hexColor = color.replace("#", "");
 
@@ -69,30 +64,54 @@ function formatFieldValue(value: number) {
   return value.toFixed(value < 1 ? 2 : 1);
 }
 
-function sampleWarpedPoint(x: number, y: number, amplitude: number, frequency: number) {
+function directionFromPoint(x: number, y: number): Rgb {
+  const lambda = (clamp(x) - 0.5) * TWO_PI;
+  const phi = (0.5 - clamp(y)) * Math.PI;
+  const cosPhi = Math.cos(phi);
+
+  return [cosPhi * Math.cos(lambda), Math.sin(phi), cosPhi * Math.sin(lambda)];
+}
+
+function normalizeDirection(direction: Rgb): Rgb {
+  const length = Math.hypot(direction[0], direction[1], direction[2]);
+
+  if (length <= 0) {
+    return [0, 1, 0];
+  }
+
+  return [direction[0] / length, direction[1] / length, direction[2] / length];
+}
+
+function warpDirection(direction: Rgb, amplitude: number, frequency: number): Rgb {
   if (amplitude <= 0) {
-    return { x: wrapUnit(x), y: wrapUnit(y) };
+    return direction;
   }
 
   const safeFrequency = Math.max(0.0001, frequency);
-  const scale = amplitude * 0.16;
-  const nextX =
-    Math.sin((y * safeFrequency + 0.23) * TWO_PI) *
-    Math.cos((x * safeFrequency + 0.41) * TWO_PI);
-  const nextY =
-    Math.cos((x * safeFrequency + 0.17) * TWO_PI) *
-    Math.sin((y * safeFrequency + 0.37) * TWO_PI);
+  const offset: Rgb = [
+    Math.sin((direction[1] * safeFrequency + 0.23) * TWO_PI) *
+      Math.cos((direction[2] * safeFrequency + 0.41) * TWO_PI),
+    Math.cos((direction[2] * safeFrequency + 0.17) * TWO_PI) *
+      Math.sin((direction[0] * safeFrequency + 0.37) * TWO_PI),
+    Math.sin((direction[0] * safeFrequency - 0.31) * TWO_PI) *
+      Math.cos((direction[1] * safeFrequency + 0.29) * TWO_PI),
+  ];
 
-  return {
-    x: wrapUnit(x + nextX * scale),
-    y: wrapUnit(y + nextY * scale),
-  };
+  return normalizeDirection([
+    direction[0] + offset[0] * amplitude,
+    direction[1] + offset[1] * amplitude,
+    direction[2] + offset[2] * amplitude,
+  ]);
 }
 
-function wrappedAxisDistance(firstValue: number, secondValue: number) {
-  const distance = Math.abs(firstValue - secondValue);
-
-  return Math.min(distance, 1 - distance);
+function angularDistance(firstDirection: Rgb, secondDirection: Rgb) {
+  return 1 - clamp(
+    firstDirection[0] * secondDirection[0] +
+      firstDirection[1] * secondDirection[1] +
+      firstDirection[2] * secondDirection[2],
+    -1,
+    1
+  );
 }
 
 function sampleFieldColor(
@@ -101,9 +120,8 @@ function sampleFieldColor(
   x: number,
   y: number
 ): Rgb {
-  const point = sampleWarpedPoint(
-    x,
-    y,
+  const direction = warpDirection(
+    directionFromPoint(x, y),
     fieldGradient.amplitude,
     fieldGradient.frequency
   );
@@ -113,10 +131,7 @@ function sampleFieldColor(
   let weightSum = 0;
 
   anchors.forEach((anchor) => {
-    const distance = Math.hypot(
-      wrappedAxisDistance(point.x, anchor.x),
-      wrappedAxisDistance(point.y, anchor.y)
-    );
+    const distance = angularDistance(direction, anchor.direction);
     const weight =
       fieldGradient.mode === "inverse-distance"
         ? 1 / (distance + 0.0005) ** fieldGradient.power
@@ -159,8 +174,7 @@ function drawFieldPreview(
   const imageData = context.createImageData(width, height);
   const anchors = fieldGradient.anchors.map((anchor) => ({
     color: parseHexColor(anchor.color),
-    x: anchor.x,
-    y: anchor.y,
+    direction: directionFromPoint(anchor.x, anchor.y),
   }));
 
   for (let y = 0; y < height; y += 1) {
@@ -221,8 +235,8 @@ function getAnchorPositionFromPointer(
   const rect = preview.getBoundingClientRect();
 
   return {
-    x: wrapUnit((event.clientX - rect.left) / rect.width),
-    y: wrapUnit((event.clientY - rect.top) / rect.height),
+    x: clamp((event.clientX - rect.left) / rect.width),
+    y: clamp((event.clientY - rect.top) / rect.height),
   };
 }
 

@@ -220,10 +220,10 @@
     linear-gradient(-45deg, transparent 75%, hsl(0 0% 100% / 0.18) 75%);
   background-position:
     0 0,
-    0 8px,
-    8px -8px,
-    -8px 0;
-  background-size: 16px 16px;
+    0 16px,
+    16px -16px,
+    -16px 0;
+  background-size: 32px 32px;
 }
 
 .gradient-stop-handle {

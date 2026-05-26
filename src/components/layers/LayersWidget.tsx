@@ -506,11 +506,12 @@ export function LayersWidget() {
         </div>
         <Button
           aria-label="Delete selected layer"
+          className="hover:bg-card! hover:text-destructive"
           disabled={!canDeleteLayer}
           onClick={deleteSelectedEffectLayer}
           size="icon-sm"
           type="button"
-          variant="ghost"
+          variant="secondary"
         >
           <Trash2 />
         </Button>

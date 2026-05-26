@@ -1,4 +1,11 @@
-import { type ChangeEvent, type ClipboardEvent, useEffect, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ImagePlus, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +21,8 @@ import type { ImageState } from "@/store/modules/layers";
 
 const DIALOG_PREVIEW_HEIGHT = 400;
 const DIALOG_PREVIEW_WIDTH = 600;
+const TRANSPARENT_PLACEHOLDER_ACTION_CLASS =
+  "bg-secondary text-secondary-foreground shadow-sm hover:bg-card!";
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) {
@@ -54,17 +63,21 @@ function getImageDimensions(src: string) {
   });
 }
 
-function getImageFileFromClipboardData(clipboardData: DataTransfer) {
-  const files = Array.from(clipboardData.files);
+function getImageFileFromDataTransfer(dataTransfer: DataTransfer) {
+  const files = Array.from(dataTransfer.files);
   const fileFromFiles = files.find((file) => file.type.startsWith("image/"));
 
   if (fileFromFiles) {
     return fileFromFiles;
   }
 
-  return Array.from(clipboardData.items)
+  return Array.from(dataTransfer.items)
     .find((item) => item.type.startsWith("image/"))
     ?.getAsFile() ?? null;
+}
+
+function hasImageDragData(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.items).some((item) => item.kind === "file" && item.type.startsWith("image/"));
 }
 
 function clampPanOffset(value: number, imageSize: number, viewportSize: number) {
@@ -83,6 +96,7 @@ export function ImageWidget() {
     y: number;
   } | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -119,7 +133,7 @@ export function ImageWidget() {
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLElement>) => {
-    const file = getImageFileFromClipboardData(event.clipboardData);
+    const file = getImageFileFromDataTransfer(event.clipboardData);
 
     if (!file) {
       return;
@@ -129,13 +143,52 @@ export function ImageWidget() {
     void loadImageFile(file);
   };
 
+  const handleDragEnter = (event: DragEvent<HTMLElement>) => {
+    if (!hasImageDragData(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+
+    setIsDragActive(false);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!hasImageDragData(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragActive(true);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    const file = getImageFileFromDataTransfer(event.dataTransfer);
+
+    if (!file) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsDragActive(false);
+    void loadImageFile(file);
+  };
+
   useEffect(() => {
     const handleDocumentPaste = (event: globalThis.ClipboardEvent) => {
       if (!event.clipboardData) {
         return;
       }
 
-      const file = getImageFileFromClipboardData(event.clipboardData);
+      const file = getImageFileFromDataTransfer(event.clipboardData);
 
       if (!file) {
         return;
@@ -186,21 +239,16 @@ export function ImageWidget() {
         type="file"
       />
 
-      <Button
-        onClick={() => fileInputRef.current?.click()}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        <ImagePlus />
-        Load Image
-      </Button>
-
       <div
         className={cn(
-          "transparent-checker relative flex aspect-video min-h-32 items-center justify-center overflow-hidden rounded-md border",
-          !hasImage && "border-dashed"
+          "relative flex aspect-video min-h-32 items-center justify-center overflow-hidden rounded-md border border-dashed",
+          hasImage ? "transparent-checker" : "bg-background hover:bg-muted/40",
+          isDragActive && "bg-muted/60"
         )}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
         {hasImage && image.src ? (
           <>
@@ -222,12 +270,15 @@ export function ImageWidget() {
             </button>
             <Button
               aria-label="Remove image"
-              className="absolute top-2 right-2"
+              className={cn(
+                TRANSPARENT_PLACEHOLDER_ACTION_CLASS,
+                "absolute top-2 right-2 hover:text-destructive"
+              )}
               onClick={(event) => {
                 event.stopPropagation();
                 clearImage();
               }}
-              size="icon-xs"
+              size="icon-sm"
               type="button"
               variant="secondary"
             >
@@ -237,47 +288,26 @@ export function ImageWidget() {
         ) : (
           <button
             aria-label="Load image"
-            className="flex size-full items-center justify-center text-muted-foreground"
+            className="flex size-full flex-col items-center justify-center gap-1 px-3 text-center text-muted-foreground"
             onClick={() => fileInputRef.current?.click()}
             type="button"
           >
-            <ImagePlus />
+            <ImagePlus aria-hidden="true" />
+            <span className="text-xs text-foreground">Drop an Image or Click to load</span>
+            <span className="text-[0.6875rem]">Supported: PNG, JPG, WebP, GIF, SVG</span>
           </button>
         )}
       </div>
 
-      {hasImage ? (
-        <p className="truncate text-xs text-muted-foreground">{imageInfo}</p>
-      ) : null}
-
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="w-auto max-w-none gap-3 p-4 sm:max-w-none">
+        <DialogContent className="w-auto max-w-none gap-3 p-4 pt-12 sm:max-w-none">
           <DialogTitle className="sr-only">Image preview</DialogTitle>
-          <div className="flex items-center gap-2 pr-8">
-            <Button
-              aria-label="Zoom out"
-              disabled={zoom <= 0.5}
-              onClick={() => setZoom((currentZoom) => Math.max(0.5, currentZoom - 0.25))}
-              size="icon-sm"
-              type="button"
-              variant="ghost"
-            >
-              <ZoomOut />
-            </Button>
-            <Button
-              aria-label="Zoom in"
-              disabled={zoom >= 4}
-              onClick={() => setZoom((currentZoom) => Math.min(4, currentZoom + 0.25))}
-              size="icon-sm"
-              type="button"
-              variant="ghost"
-            >
-              <ZoomIn />
-            </Button>
-          </div>
+          <p className="absolute top-4 left-4 max-w-[calc(100%-4rem)] truncate text-xs text-muted-foreground">
+            {imageInfo}
+          </p>
           <div
             className={cn(
-              "transparent-checker flex max-h-[70vh] min-h-64 touch-none items-center justify-center overflow-hidden rounded-md border",
+              "transparent-checker relative flex max-h-[70vh] min-h-64 touch-none items-center justify-center overflow-hidden rounded-md border",
               isPanning ? "cursor-grabbing" : "cursor-grab"
             )}
             onPointerCancel={() => {
@@ -324,6 +354,39 @@ export function ImageWidget() {
               width: DIALOG_PREVIEW_WIDTH,
             }}
           >
+            <div
+              className="absolute top-2 right-2 z-10 flex items-center gap-2"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <Button
+                aria-label="Zoom out"
+                className={TRANSPARENT_PLACEHOLDER_ACTION_CLASS}
+                disabled={zoom <= 0.5}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setZoom((currentZoom) => Math.max(0.5, currentZoom - 0.25));
+                }}
+                size="icon-sm"
+                type="button"
+                variant="secondary"
+              >
+                <ZoomOut />
+              </Button>
+              <Button
+                aria-label="Zoom in"
+                className={TRANSPARENT_PLACEHOLDER_ACTION_CLASS}
+                disabled={zoom >= 4}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setZoom((currentZoom) => Math.min(4, currentZoom + 0.25));
+                }}
+                size="icon-sm"
+                type="button"
+                variant="secondary"
+              >
+                <ZoomIn />
+              </Button>
+            </div>
             {image.src ? (
               <img
                 alt={image.fileName || "Image layer"}
@@ -337,7 +400,6 @@ export function ImageWidget() {
               />
             ) : null}
           </div>
-          <p className="truncate text-xs text-muted-foreground">{imageInfo}</p>
         </DialogContent>
       </Dialog>
     </Widget>

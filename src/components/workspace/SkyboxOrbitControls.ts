@@ -2,11 +2,15 @@ import * as THREE from "three/webgpu";
 
 type SkyboxOrbitControlsEvent = "change" | "end" | "start";
 type SkyboxOrbitControlsListener = () => void;
+export type SkyboxRotationMode = "drag" | "scroll";
 
 const EPSILON = 0.000001;
 const DEFAULT_DAMPING_FACTOR = 0.08;
 const DEFAULT_ROTATE_SPEED = 0.001;
+const LINE_MODE_DELTA_FACTOR = 16;
+const PAGE_MODE_DELTA_FACTOR = 100;
 const RIGHT_MOUSE_BUTTON = 2;
+const SCROLL_END_DELAY_MS = 120;
 
 const worldUp = new THREE.Vector3(0, 1, 0);
 const cameraPitchAxis = new THREE.Vector3(1, 0, 0);
@@ -17,15 +21,18 @@ const pitchAxis = new THREE.Vector3();
 export class SkyboxOrbitControls {
   dampingFactor = DEFAULT_DAMPING_FACTOR;
   enabled = true;
+  rotationMode: SkyboxRotationMode = "drag";
   rotateSpeed = DEFAULT_ROTATE_SPEED;
 
   #animationFrameId: number | null = null;
   #camera: THREE.PerspectiveCamera;
   #domElement: HTMLElement;
+  #isScrolling = false;
   #listeners = new Map<SkyboxOrbitControlsEvent, Set<SkyboxOrbitControlsListener>>();
   #pointerId = -1;
   #previousX = 0;
   #previousY = 0;
+  #scrollEndTimeoutId: number | null = null;
   #velocityX = 0;
   #velocityY = 0;
 
@@ -39,6 +46,7 @@ export class SkyboxOrbitControls {
     this.#domElement.addEventListener("lostpointercapture", this.#onPointerEnd);
     this.#domElement.addEventListener("pointermove", this.#onPointerMove);
     this.#domElement.addEventListener("pointerup", this.#onPointerEnd);
+    this.#domElement.addEventListener("wheel", this.#onWheel, { passive: false });
   }
 
   get isDragging() {
@@ -60,6 +68,7 @@ export class SkyboxOrbitControls {
     this.#domElement.removeEventListener("lostpointercapture", this.#onPointerEnd);
     this.#domElement.removeEventListener("pointermove", this.#onPointerMove);
     this.#domElement.removeEventListener("pointerup", this.#onPointerEnd);
+    this.#domElement.removeEventListener("wheel", this.#onWheel);
     this.#listeners.clear();
   }
 
@@ -76,7 +85,13 @@ export class SkyboxOrbitControls {
 
     this.#velocityX = 0;
     this.#velocityY = 0;
+    this.#isScrolling = false;
     this.#pointerId = -1;
+
+    if (this.#scrollEndTimeoutId !== null) {
+      window.clearTimeout(this.#scrollEndTimeoutId);
+      this.#scrollEndTimeoutId = null;
+    }
 
     if (this.#animationFrameId !== null) {
       window.cancelAnimationFrame(this.#animationFrameId);
@@ -112,7 +127,12 @@ export class SkyboxOrbitControls {
   };
 
   #onPointerDown = (event: PointerEvent) => {
-    if (!this.enabled || event.button !== RIGHT_MOUSE_BUTTON || this.isDragging) {
+    if (
+      !this.enabled ||
+      this.rotationMode !== "drag" ||
+      event.button !== RIGHT_MOUSE_BUTTON ||
+      this.isDragging
+    ) {
       return;
     }
 
@@ -160,6 +180,46 @@ export class SkyboxOrbitControls {
     this.#dispatchEvent("change");
   };
 
+  #onWheel = (event: WheelEvent) => {
+    if (!this.enabled || this.rotationMode !== "scroll" || this.isDragging) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const { deltaX, deltaY } = this.#normalizeWheelDelta(event);
+
+    if (deltaX === 0 && deltaY === 0) {
+      return;
+    }
+
+    if (!this.#isScrolling) {
+      this.#isScrolling = true;
+      this.#dispatchEvent("start");
+    }
+
+    this.#velocityX = deltaX * this.rotateSpeed;
+    this.#velocityY = deltaY * this.rotateSpeed;
+    this.#rotate(this.#velocityX, this.#velocityY);
+    this.#dispatchEvent("change");
+    this.#scheduleScrollEnd();
+  };
+
+  #normalizeWheelDelta(event: WheelEvent) {
+    let deltaX = event.deltaX;
+    let deltaY = event.deltaY;
+
+    if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+      deltaX *= LINE_MODE_DELTA_FACTOR;
+      deltaY *= LINE_MODE_DELTA_FACTOR;
+    } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+      deltaX *= PAGE_MODE_DELTA_FACTOR;
+      deltaY *= PAGE_MODE_DELTA_FACTOR;
+    }
+
+    return { deltaX, deltaY };
+  }
+
   #rotate(yaw: number, pitch: number) {
     yawQuaternion.setFromAxisAngle(worldUp, yaw);
     this.#camera.quaternion.premultiply(yawQuaternion);
@@ -185,5 +245,18 @@ export class SkyboxOrbitControls {
     };
 
     this.#animationFrameId = window.requestAnimationFrame(tick);
+  }
+
+  #scheduleScrollEnd() {
+    if (this.#scrollEndTimeoutId !== null) {
+      window.clearTimeout(this.#scrollEndTimeoutId);
+    }
+
+    this.#scrollEndTimeoutId = window.setTimeout(() => {
+      this.#scrollEndTimeoutId = null;
+      this.#isScrolling = false;
+      this.#dispatchEvent("end");
+      this.#scheduleUpdate();
+    }, SCROLL_END_DELAY_MS);
   }
 }

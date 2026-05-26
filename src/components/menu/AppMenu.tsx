@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/menubar";
 import { useWorkspaceStore } from "@/store/app";
 import {
+  type CameraRotationMode,
   type MenuCommandId,
   type MenuId,
   type SceneRenderMode,
@@ -75,12 +76,14 @@ export function AppMenu() {
   const redoHistory = useWorkspaceStore((state) => state.redoHistory);
   const canUndo = useWorkspaceStore((state) => state.historyPast.length > 0);
   const canRedo = useWorkspaceStore((state) => state.historyFuture.length > 0);
+  const cameraRotationMode = useWorkspaceStore((state) => state.cameraRotationMode);
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
   const showGroundPlaneHelper = useWorkspaceStore((state) => state.showGroundPlaneHelper);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
   const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
   const setSceneRenderMode = useWorkspaceStore((state) => state.setSceneRenderMode);
+  const setCameraRotationMode = useWorkspaceStore((state) => state.setCameraRotationMode);
   const setSkyGeometryType = useWorkspaceStore((state) => state.setSkyGeometryType);
   const setShowGroundPlaneHelper = useWorkspaceStore((state) => state.setShowGroundPlaneHelper);
   const setShowOrientationGizmo = useWorkspaceStore((state) => state.setShowOrientationGizmo);
@@ -161,24 +164,42 @@ export function AppMenu() {
   function renderViewMenu() {
     return (
       <MenubarContent>
-        <MenubarCheckboxItem
-          checked={showOrientationGizmo}
-          onCheckedChange={setShowOrientationGizmo}
-        >
-          Orientation Gizmo
-        </MenubarCheckboxItem>
-        <MenubarCheckboxItem
-          checked={showSkyGeometry}
-          onCheckedChange={setShowSkyGeometry}
-        >
-          Sky Geometry
-        </MenubarCheckboxItem>
-        <MenubarCheckboxItem
-          checked={showGroundPlaneHelper}
-          onCheckedChange={setShowGroundPlaneHelper}
-        >
-          Ground Plane Helper
-        </MenubarCheckboxItem>
+        <MenubarSub>
+          <MenubarSubTrigger>Helpers</MenubarSubTrigger>
+          <MenubarSubContent>
+            <MenubarCheckboxItem
+              checked={showOrientationGizmo}
+              onCheckedChange={setShowOrientationGizmo}
+            >
+              Orientation Gizmo
+            </MenubarCheckboxItem>
+            <MenubarCheckboxItem
+              checked={showSkyGeometry}
+              onCheckedChange={setShowSkyGeometry}
+            >
+              Sky Geometry
+            </MenubarCheckboxItem>
+            <MenubarCheckboxItem
+              checked={showGroundPlaneHelper}
+              onCheckedChange={setShowGroundPlaneHelper}
+            >
+              Ground Plane Helper
+            </MenubarCheckboxItem>
+          </MenubarSubContent>
+        </MenubarSub>
+        <MenubarSeparator />
+        <MenubarSub>
+          <MenubarSubTrigger>Camera Rotation</MenubarSubTrigger>
+          <MenubarSubContent>
+            <MenubarRadioGroup
+              onValueChange={(value) => setCameraRotationMode(value as CameraRotationMode)}
+              value={cameraRotationMode}
+            >
+              <MenubarRadioItem value="drag">Drag</MenubarRadioItem>
+              <MenubarRadioItem value="scroll">Scroll</MenubarRadioItem>
+            </MenubarRadioGroup>
+          </MenubarSubContent>
+        </MenubarSub>
       </MenubarContent>
     );
   }

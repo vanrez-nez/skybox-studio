@@ -3,7 +3,11 @@ import * as THREE from "three/webgpu";
 
 import { useWorkspaceStore } from "@/store/app";
 import { getImageAsset } from "@/lib/image-assets";
-import type { SceneRenderMode, WorkspaceView } from "@/store/modules/scene";
+import type {
+  CameraRotationMode,
+  SceneRenderMode,
+  WorkspaceView,
+} from "@/store/modules/scene";
 import { RotationGizmo } from "@/components/workspace/RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
 import type { EffectLayer } from "@/effects/effect-layer";
@@ -131,7 +135,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const syncImagePlacementsRef = useRef<(() => void) | null>(null);
   const syncImageLayerPlacementsRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
   const syncImageTexturesRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
-  const syncHoveredImageLayerRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
+  const syncEditorImageStateRef = useRef<
+    ((layers: EffectLayer[], selectedLayerId: string) => void) | null
+  >(null);
+  const setCameraRotationModeRef = useRef<((mode: CameraRotationMode) => void) | null>(null);
   const setGroundPlaneHelperVisibleRef = useRef<((visible: boolean) => void) | null>(null);
   const setSkyGeometryVisibleRef = useRef<((visible: boolean) => void) | null>(null);
   const updateSkyboxRef = useRef<
@@ -146,8 +153,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const effectLayers = useWorkspaceStore((state) => state.effectLayers);
   const effectLayersRef = useRef(effectLayers);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
+  const cameraRotationMode = useWorkspaceStore((state) => state.cameraRotationMode);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const selectEffectLayer = useWorkspaceStore((state) => state.selectEffectLayer);
+  const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const setImageAssetSource = useWorkspaceStore((state) => state.setImageAssetSource);
   const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
   const previewEffectLayerBlendMode = useWorkspaceStore(
@@ -182,8 +191,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     syncImagePlacementsRef.current?.();
     syncImageLayerPlacementsRef.current?.(effectLayers);
     syncImageTexturesRef.current?.(effectLayers);
-    syncHoveredImageLayerRef.current?.(effectLayers);
-  }, [effectLayers]);
+    syncEditorImageStateRef.current?.(effectLayers, selectedLayerId);
+  }, [effectLayers, selectedLayerId]);
 
   const handleGizmoAxisSelect = useCallback((direction: VectorTuple) => {
     lookAtAxisDirectionRef.current?.(direction);
@@ -196,6 +205,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   useEffect(() => {
     renderRef.current?.();
   }, [mode]);
+
+  useEffect(() => {
+    setCameraRotationModeRef.current?.(cameraRotationMode);
+  }, [cameraRotationMode]);
 
   useEffect(() => {
     setSkyGeometryVisibleRef.current?.(showSkyGeometry);
@@ -242,7 +255,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     let pendingImagePlacementLayerId = "";
     let pendingImagePlacement: ImagePlacement | null = null;
     let pendingImagePlacementFrame: number | null = null;
-    const liveSkybox = new Skybox().setRenderer(renderer).fromManifest(skyboxManifest).load();
+    const liveSkybox = new Skybox()
+      .setRenderer(renderer)
+      .fromManifest(skyboxManifest)
+      .setEditorPresentationEnabled(true)
+      .load();
     const skyGeometry = new THREE.LineSegments(
       createSkyboxWireGeometry({ type: currentSkyGeometryType }),
       new THREE.LineBasicMaterial({
@@ -272,6 +289,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       pointerId: -1,
     };
     let hoveredImageLayerId: string | null = null;
+    let selectedImageLayerId: string | null = null;
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     camera.position.set(0, 0, 0);
     camera.rotation.copy(cameraRotation);
@@ -314,30 +332,61 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       render();
     };
 
-    const setHoveredImageLayerId = (layerId: string | null) => {
-      if (hoveredImageLayerId === layerId) {
+    const getEditorImageLayerId = (layers: EffectLayer[], layerId: string) => {
+      const layer = layers.find((effectLayer) => effectLayer.id === layerId);
+
+      return layer?.type === "image" && layer.enabled ? layer.id : null;
+    };
+
+    const setEditorImageState = (nextState: {
+      hoveredImageLayerId?: string | null;
+      selectedImageLayerId?: string | null;
+    }) => {
+      const nextHoveredImageLayerId = Object.prototype.hasOwnProperty.call(nextState, "hoveredImageLayerId")
+        ? nextState.hoveredImageLayerId ?? null
+        : hoveredImageLayerId;
+      const nextSelectedImageLayerId = Object.prototype.hasOwnProperty.call(nextState, "selectedImageLayerId")
+        ? nextState.selectedImageLayerId ?? null
+        : selectedImageLayerId;
+
+      if (
+        hoveredImageLayerId === nextHoveredImageLayerId &&
+        selectedImageLayerId === nextSelectedImageLayerId
+      ) {
         return;
       }
 
-      hoveredImageLayerId = layerId;
-      liveSkybox.setHoveredImageLayerId(layerId);
+      hoveredImageLayerId = nextHoveredImageLayerId;
+      selectedImageLayerId = nextSelectedImageLayerId;
+      liveSkybox.setEditorImageState({
+        hoveredImageLayerId,
+        selectedImageLayerId,
+      });
       render();
     };
 
-    syncHoveredImageLayerRef.current = (layers) => {
-      if (
-        hoveredImageLayerId &&
-        !layers.some(
-          (layer) =>
-            layer.id === hoveredImageLayerId &&
-            layer.type === "image" &&
-            layer.enabled &&
-            Boolean(layer.params.src)
-        )
-      ) {
-        setHoveredImageLayerId(null);
-      }
+    const setHoveredImageLayerId = (layerId: string | null) => {
+      setEditorImageState({ hoveredImageLayerId: layerId });
     };
+
+    const setSelectedImageLayerId = (layerId: string | null) => {
+      setEditorImageState({ selectedImageLayerId: layerId });
+    };
+
+    syncEditorImageStateRef.current = (layers, nextSelectedLayerId) => {
+      const nextHoveredImageLayerId = hoveredImageLayerId
+        ? getEditorImageLayerId(layers, hoveredImageLayerId)
+        : null;
+      const nextSelectedImageLayerId = nextSelectedLayerId
+        ? getEditorImageLayerId(layers, nextSelectedLayerId)
+        : null;
+
+      setEditorImageState({
+        hoveredImageLayerId: nextHoveredImageLayerId,
+        selectedImageLayerId: nextSelectedImageLayerId,
+      });
+    };
+    syncEditorImageStateRef.current(effectLayersRef.current, selectedLayerId);
 
     const configureImageTexture = (texture: THREE.Texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -594,6 +643,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     const orbitControls = new SkyboxOrbitControls(camera, canvas);
+    orbitControls.rotationMode = cameraRotationMode;
 
     orbitControls.addEventListener("start", cancelCameraAnimation);
     orbitControls.addEventListener("change", () => {
@@ -617,6 +667,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     updateSkyboxRef.current = applySceneRenderMode;
+    setCameraRotationModeRef.current = (nextRotationMode) => {
+      orbitControls.rotationMode = nextRotationMode;
+      orbitControls.stop();
+      canvas.style.cursor = "grab";
+    };
 
     const getAxisQuaternion = (direction: VectorTuple) => {
       const requestedDirection = new THREE.Vector3(...direction).normalize();
@@ -871,6 +926,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
       selectEffectLayer(hitLayerId);
       setHoveredImageLayerId(hitLayerId);
+      setSelectedImageLayerId(hitLayerId);
       beginHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE);
       imageDragState.layerId = hitLayerId;
       imageDragState.pointerId = event.pointerId;
@@ -942,10 +998,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       renderRef.current = null;
       setGroundPlaneHelperVisibleRef.current = null;
       setSkyGeometryVisibleRef.current = null;
+      setCameraRotationModeRef.current = null;
       syncImagePlacementsRef.current = null;
       syncImageLayerPlacementsRef.current = null;
       syncImageTexturesRef.current = null;
-      syncHoveredImageLayerRef.current = null;
+      syncEditorImageStateRef.current = null;
       updateSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
       resetOrientationRef.current = null;

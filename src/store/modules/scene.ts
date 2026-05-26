@@ -4,6 +4,7 @@ export type WorkspaceView = "editor" | "preview";
 export type MenuId = "file" | "edit" | "sky" | "view";
 export type MenuCommandId = "edit.redo" | "edit.undo" | "file.export" | "file.load";
 export type MenuEventId = MenuId | MenuCommandId;
+export type CameraRotationMode = "drag" | "scroll";
 export type SceneRenderMode = "live" | "texture-baked";
 export type SkyGeometryType = "box" | "sphere";
 
@@ -14,6 +15,7 @@ export type MenuEvent = {
 
 export type SceneSlice = {
   activeView: WorkspaceView;
+  cameraRotationMode: CameraRotationMode;
   lastMenuEvent: MenuEvent | null;
   sceneRenderMode: SceneRenderMode;
   skyGeometryType: SkyGeometryType;
@@ -22,6 +24,7 @@ export type SceneSlice = {
   showSkyGeometry: boolean;
   emitMenuEvent: (id: MenuEventId) => void;
   setActiveView: (view: WorkspaceView) => void;
+  setCameraRotationMode: (mode: CameraRotationMode) => void;
   setSceneRenderMode: (mode: SceneRenderMode) => void;
   setSkyGeometryType: (type: SkyGeometryType) => void;
   setShowGroundPlaneHelper: (visible: boolean) => void;
@@ -41,6 +44,7 @@ export const createSceneSlice: StateCreator<
   SceneSlice
 > = (set) => ({
   activeView: "editor",
+  cameraRotationMode: "drag",
   lastMenuEvent: null,
   sceneRenderMode: "live",
   skyGeometryType: "box",
@@ -49,6 +53,7 @@ export const createSceneSlice: StateCreator<
   showSkyGeometry: false,
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
   setActiveView: (view) => set({ activeView: view }),
+  setCameraRotationMode: (mode) => set({ cameraRotationMode: mode }),
   setSceneRenderMode: (mode) => set({ sceneRenderMode: mode === "texture-baked" ? "live" : mode }),
   setSkyGeometryType: (type) => set({ skyGeometryType: type }),
   setShowGroundPlaneHelper: (visible) => set({ showGroundPlaneHelper: visible }),

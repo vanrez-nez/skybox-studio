@@ -45,6 +45,7 @@ export type WorkspaceStore = SceneSlice & LayersSlice & HistorySlice;
 type PersistedWorkspacePreferences = Pick<
   WorkspaceStore,
   | "activeView"
+  | "cameraRotationMode"
   | "effectLayers"
   | "fieldGradient"
   | "gradient"
@@ -280,6 +281,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       name: "skybox-studio-session",
       partialize: (state): PersistedWorkspacePreferences => ({
         activeView: state.activeView,
+        cameraRotationMode: state.cameraRotationMode,
         effectLayers: omitRuntimeImageLayerData(state.effectLayers),
         fieldGradient: state.fieldGradient,
         gradient: state.gradient,

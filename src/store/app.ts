@@ -60,6 +60,21 @@ type PersistedWorkspacePreferences = Pick<
 
 let isStorageHistoryTransactionActive = false;
 const DEFAULT_HISTORY_TRANSACTION_SCOPE = "global";
+const MAX_HISTORY_OPERATIONS = 50;
+
+function pushHistorySnapshot(
+  history: HistorySnapshot[],
+  snapshot: HistorySnapshot
+): HistorySnapshot[] {
+  return [...history, snapshot].slice(-MAX_HISTORY_OPERATIONS);
+}
+
+function unshiftHistorySnapshot(
+  history: HistorySnapshot[],
+  snapshot: HistorySnapshot
+): HistorySnapshot[] {
+  return [snapshot, ...history].slice(0, MAX_HISTORY_OPERATIONS);
+}
 
 function omitRuntimeImageData(image: ImageState): ImageState {
   return {
@@ -203,7 +218,7 @@ function createHistorySlice(
         return {
           activeHistoryTransaction: null,
           historyFuture: [],
-          historyPast: [...state.historyPast, transaction.snapshot],
+          historyPast: pushHistorySnapshot(state.historyPast, transaction.snapshot),
         };
       }),
     createHistoryCheckpoint: (state) => {
@@ -212,10 +227,10 @@ function createHistorySlice(
       return {
         activeHistoryTransaction: null,
         historyFuture: [],
-        historyPast: [
-          ...state.historyPast,
+        historyPast: pushHistorySnapshot(
+          state.historyPast,
           state.activeHistoryTransaction?.snapshot ?? captureHistorySnapshot(participants, state),
-        ],
+        ),
       };
     },
     historyFuture: [],
@@ -243,7 +258,10 @@ function createHistorySlice(
           ...restoreHistorySnapshot(participants, next),
           activeHistoryTransaction: null,
           historyFuture: state.historyFuture.slice(1),
-          historyPast: [...state.historyPast, captureHistorySnapshot(participants, state)],
+          historyPast: pushHistorySnapshot(
+            state.historyPast,
+            captureHistorySnapshot(participants, state)
+          ),
         };
       }),
     undoHistory: () =>
@@ -259,7 +277,10 @@ function createHistorySlice(
         return {
           ...restoreHistorySnapshot(participants, previous),
           activeHistoryTransaction: null,
-          historyFuture: [captureHistorySnapshot(participants, state), ...state.historyFuture],
+          historyFuture: unshiftHistorySnapshot(
+            state.historyFuture,
+            captureHistorySnapshot(participants, state)
+          ),
           historyPast: state.historyPast.slice(0, -1),
         };
       }),

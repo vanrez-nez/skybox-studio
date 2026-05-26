@@ -14,6 +14,7 @@ import type { EffectLayer } from "@/effects/effect-layer";
 import {
   createAngularDecalPlacement,
   createSkyboxWireGeometry,
+  type ImageProjectionUv,
   normalizeVector,
   projectDirectionToImageUv,
   Skybox,
@@ -31,6 +32,11 @@ type ThreeWorkspaceSceneProps = {
 
 type QuaternionTuple = [number, number, number, number];
 type VectorTuple = [number, number, number];
+type SceneLayerHit = {
+  layerId: string;
+  type: EffectLayer["type"];
+  uv?: ImageProjectionUv;
+};
 
 const INITIAL_CAMERA_ROTATION = new THREE.Euler(0.08, -0.35, 0, "YXZ");
 const AXIS_ANIMATION_DURATION_MS = 320;
@@ -152,6 +158,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   );
   const effectLayers = useWorkspaceStore((state) => state.effectLayers);
   const effectLayersRef = useRef(effectLayers);
+  const selectedLayerIdRef = useRef("");
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const cameraRotationMode = useWorkspaceStore((state) => state.cameraRotationMode);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
@@ -159,6 +166,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const setImageAssetSource = useWorkspaceStore((state) => state.setImageAssetSource);
   const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
+  const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const previewEffectLayerBlendMode = useWorkspaceStore(
     (state) => state.previewEffectLayerBlendMode
   );
@@ -188,6 +196,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
   useEffect(() => {
     effectLayersRef.current = effectLayers;
+    selectedLayerIdRef.current = selectedLayerId;
     syncImagePlacementsRef.current?.();
     syncImageLayerPlacementsRef.current?.(effectLayers);
     syncImageTexturesRef.current?.(effectLayers);
@@ -751,7 +760,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       animateToQuaternion(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION));
     };
 
-    const setRaycasterFromPointer = (event: PointerEvent) => {
+    const setRaycasterFromPointer = (event: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
       const pointer = new THREE.Vector2(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -761,32 +770,39 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       raycaster.setFromCamera(pointer, camera);
     };
 
-    const getImageLayerHit = (event: PointerEvent) => {
+    const getSceneLayerHits = (event: MouseEvent): SceneLayerHit[] => {
       setRaycasterFromPointer(event);
+      const direction = vectorToTuple(raycaster.ray.direction);
+      const hits: SceneLayerHit[] = [];
 
       for (const layer of effectLayersRef.current) {
-        if (
-          layer.type !== "image" ||
-          !layer.enabled ||
-          !layer.params.src ||
-          !layer.params.placement
-        ) {
+        if (!layer.enabled) {
           continue;
         }
 
-        const placement = layer.params.placement;
-        const uv = projectDirectionToImageUv(vectorToTuple(raycaster.ray.direction), placement);
+        if (layer.type !== "image") {
+          hits.push({ layerId: layer.id, type: layer.type });
+          continue;
+        }
+
+        if (!layer.params.src || !layer.params.placement) {
+          continue;
+        }
+
+        const uv = projectDirectionToImageUv(direction, layer.params.placement);
 
         if (uv) {
-          return layer.id;
+          hits.push({ layerId: layer.id, type: layer.type, uv });
         }
       }
 
-      return null;
+      return hits;
     };
 
     const updateHoveredImageLayerFromPointer = (event: PointerEvent) => {
-      setHoveredImageLayerId(getImageLayerHit(event));
+      const imageHit = getSceneLayerHits(event).find((hit) => hit.type === "image");
+
+      setHoveredImageLayerId(imageHit?.layerId ?? null);
     };
 
     const syncImageLayerPlacementLive = (layerId: string, placement: ImagePlacement | null) => {
@@ -898,37 +914,34 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
     };
 
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) {
-        return;
-      }
+    const selectSceneLayerHit = (hit: SceneLayerHit) => {
+      selectedLayerIdRef.current = hit.layerId;
+      selectEffectLayer(hit.layerId);
+      setSelectedImageLayerId(hit.type === "image" ? hit.layerId : null);
+    };
 
-      event.preventDefault();
-      const hitLayerId = getImageLayerHit(event);
-
-      if (!hitLayerId) {
-        return;
+    const beginImageDrag = (event: PointerEvent, hit: SceneLayerHit) => {
+      if (hit.type !== "image") {
+        return false;
       }
 
       const hitLayer = effectLayersRef.current.find(
         (layer): layer is Extract<EffectLayer, { type: "image" }> =>
-          layer.id === hitLayerId && layer.type === "image"
+          layer.id === hit.layerId && layer.type === "image"
       );
       const placement = hitLayer?.params.placement;
 
       if (!placement) {
-        return;
+        return false;
       }
 
-      const hitUv = projectDirectionToImageUv(vectorToTuple(raycaster.ray.direction), placement);
       const halfWidth = Math.tan(placement.angularWidth / 2);
       const halfHeight = Math.tan(placement.angularHeight / 2);
 
-      selectEffectLayer(hitLayerId);
-      setHoveredImageLayerId(hitLayerId);
-      setSelectedImageLayerId(hitLayerId);
+      selectSceneLayerHit(hit);
+      setHoveredImageLayerId(hit.layerId);
       beginHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE);
-      imageDragState.layerId = hitLayerId;
+      imageDragState.layerId = hit.layerId;
       imageDragState.pointerId = event.pointerId;
       imageDragState.placement = placement;
       imageDragState.angularWidth = placement.angularWidth;
@@ -936,10 +949,65 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       imageDragState.baseAngularWidth = placement.baseAngularWidth;
       imageDragState.baseAngularHeight = placement.baseAngularHeight;
       imageDragState.hasMoved = false;
-      imageDragState.offsetX = hitUv ? (hitUv.u - 0.5) * halfWidth * 2 : 0;
-      imageDragState.offsetY = hitUv ? (0.5 - hitUv.v) * halfHeight * 2 : 0;
+      imageDragState.offsetX = hit.uv ? (hit.uv.u - 0.5) * halfWidth * 2 : 0;
+      imageDragState.offsetY = hit.uv ? (0.5 - hit.uv.v) * halfHeight * 2 : 0;
       canvas.style.cursor = "grabbing";
       canvas.setPointerCapture(event.pointerId);
+
+      return true;
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+
+      event.preventDefault();
+      const hits = getSceneLayerHits(event);
+
+      if (hits.length === 0) {
+        return;
+      }
+
+      const hoveredImageHit = hits.find((hit) => hit.type === "image");
+      setHoveredImageLayerId(hoveredImageHit?.layerId ?? null);
+
+      const selectedImageHit = hits.find(
+        (hit) => hit.type === "image" && hit.layerId === selectedLayerIdRef.current
+      );
+
+      if (selectedImageHit && beginImageDrag(event, selectedImageHit)) {
+        return;
+      }
+
+      const topHit = hits[0];
+
+      if (topHit.type === "image" && beginImageDrag(event, topHit)) {
+        return;
+      }
+
+      selectSceneLayerHit(topHit);
+    };
+
+    const onDoubleClick = (event: MouseEvent) => {
+      event.preventDefault();
+      const hits = getSceneLayerHits(event);
+
+      if (hits.length === 0) {
+        return;
+      }
+
+      const selectedHitIndex = hits.findIndex(
+        (hit) => hit.layerId === selectedLayerIdRef.current
+      );
+      const peeledHitIndex = selectedHitIndex === -1 ? 0 : selectedHitIndex;
+      const peeledHit = hits[peeledHitIndex];
+      const nextHit = hits.length > 1
+        ? hits[(peeledHitIndex + 1) % hits.length]
+        : peeledHit;
+
+      selectSceneLayerHit(nextHit);
+      toggleEffectLayerEnabled(peeledHit.layerId);
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -962,6 +1030,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("dblclick", onDoubleClick);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerleave", clearHoveredImageLayer);
     canvas.addEventListener("pointerup", releaseImagePointer);
@@ -1013,6 +1082,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
       orbitControls.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("dblclick", onDoubleClick);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", clearHoveredImageLayer);
       canvas.removeEventListener("pointerup", releaseImagePointer);

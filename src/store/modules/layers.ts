@@ -256,22 +256,41 @@ function cloneEffectLayer(layer: EffectLayer): EffectLayer {
   };
 }
 
+function cloneImageStateForHistory(image: ImageState): ImageState {
+  return {
+    ...cloneImageState(image),
+    pixels: null,
+    src: null,
+  };
+}
+
+function cloneEffectLayerForHistory(layer: EffectLayer): EffectLayer {
+  if (layer.type !== "image") {
+    return cloneEffectLayer(layer);
+  }
+
+  return {
+    ...layer,
+    params: cloneImageStateForHistory(layer.params),
+  };
+}
+
 function captureLayersHistorySnapshot(state: LayersSlice): LayersHistorySnapshot {
   return {
-    effectLayers: state.effectLayers.map(cloneEffectLayer),
+    effectLayers: state.effectLayers.map(cloneEffectLayerForHistory),
     fieldGradient: cloneFieldGradientState(state.fieldGradient),
     gradient: cloneGradientState(state.gradient),
-    image: cloneImageState(state.image),
+    image: cloneImageStateForHistory(state.image),
     selectedLayerId: state.selectedLayerId,
   };
 }
 
 function restoreLayersHistorySnapshot(snapshot: LayersHistorySnapshot) {
   return {
-    effectLayers: snapshot.effectLayers.map(cloneEffectLayer),
+    effectLayers: snapshot.effectLayers.map(cloneEffectLayerForHistory),
     fieldGradient: cloneFieldGradientState(snapshot.fieldGradient),
     gradient: cloneGradientState(snapshot.gradient),
-    image: cloneImageState(snapshot.image),
+    image: cloneImageStateForHistory(snapshot.image),
     selectedLayerId: snapshot.selectedLayerId,
   };
 }

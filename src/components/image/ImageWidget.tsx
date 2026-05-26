@@ -24,7 +24,6 @@ import {
 import { Widget } from "@/components/widgets/Widget";
 import {
   createImageAssetId,
-  deleteImageAsset,
   putImageAsset,
 } from "@/lib/image-assets";
 import { cn } from "@/lib/utils";
@@ -425,9 +424,6 @@ export function ImageWidget() {
               )}
               onClick={(event) => {
                 event.stopPropagation();
-                if (image.assetId) {
-                  void deleteImageAsset(image.assetId);
-                }
                 clearImage();
               }}
               size="icon-sm"

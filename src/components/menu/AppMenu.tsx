@@ -48,16 +48,29 @@ const menuItems: Array<{
     items: fileMenuItems,
   },
   { id: "edit", label: "Edit" },
+  { id: "layer", label: "Layer" },
   { id: "view", label: "View" },
   { id: "sky", label: "Sky" },
 ];
 
-function getModifierKeyLabel() {
+function isMacPlatform() {
   if (typeof navigator === "undefined") {
-    return "Mod";
+    return false;
   }
 
-  return /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+  return /Mac|iPhone|iPad/.test(navigator.platform);
+}
+
+function getModifierKeyLabel() {
+  return isMacPlatform() ? "⌘" : "Ctrl";
+}
+
+function getDeleteShortcutKey() {
+  return isMacPlatform() ? "Backspace" : "Delete";
+}
+
+function getDeleteShortcutLabel() {
+  return isMacPlatform() ? "⌫" : "Delete";
 }
 
 function Shortcut({ keys }: { keys: string[] }) {
@@ -77,6 +90,7 @@ export function AppMenu() {
   const canUndo = useWorkspaceStore((state) => state.historyPast.length > 0);
   const canRedo = useWorkspaceStore((state) => state.historyFuture.length > 0);
   const cameraRotationMode = useWorkspaceStore((state) => state.cameraRotationMode);
+  const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
   const showGroundPlaneHelper = useWorkspaceStore((state) => state.showGroundPlaneHelper);
@@ -88,9 +102,16 @@ export function AppMenu() {
   const setShowGroundPlaneHelper = useWorkspaceStore((state) => state.setShowGroundPlaneHelper);
   const setShowOrientationGizmo = useWorkspaceStore((state) => state.setShowOrientationGizmo);
   const setShowSkyGeometry = useWorkspaceStore((state) => state.setShowSkyGeometry);
+  const deleteSelectedEffectLayer = useWorkspaceStore((state) => state.deleteSelectedEffectLayer);
+  const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const undoRef = useRef(undoHistory);
   const redoRef = useRef(redoHistory);
+  const deleteSelectedEffectLayerRef = useRef(deleteSelectedEffectLayer);
+  const selectedLayerIdRef = useRef(selectedLayerId);
+  const toggleEffectLayerEnabledRef = useRef(toggleEffectLayerEnabled);
   const modifierKeyLabel = getModifierKeyLabel();
+  const deleteShortcutKey = getDeleteShortcutKey();
+  const deleteShortcutLabel = getDeleteShortcutLabel();
   const editMenuItems: AppMenuItem[] = [
     {
       disabled: !canUndo,
@@ -105,6 +126,20 @@ export function AppMenu() {
       shortcut: [modifierKeyLabel, "⇧", "Z"],
     },
   ];
+  const layerMenuItems: AppMenuItem[] = [
+    {
+      disabled: !selectedLayerId,
+      id: "layer.toggle-visibility",
+      label: "Toggle Visibility",
+      shortcut: ["H"],
+    },
+    {
+      disabled: !selectedLayerId,
+      id: "layer.delete",
+      label: "Delete",
+      shortcut: [deleteShortcutLabel],
+    },
+  ];
 
   useEffect(() => {
     undoRef.current = undoHistory;
@@ -113,6 +148,18 @@ export function AppMenu() {
   useEffect(() => {
     redoRef.current = redoHistory;
   }, [redoHistory]);
+
+  useEffect(() => {
+    deleteSelectedEffectLayerRef.current = deleteSelectedEffectLayer;
+  }, [deleteSelectedEffectLayer]);
+
+  useEffect(() => {
+    selectedLayerIdRef.current = selectedLayerId;
+  }, [selectedLayerId]);
+
+  useEffect(() => {
+    toggleEffectLayerEnabledRef.current = toggleEffectLayerEnabled;
+  }, [toggleEffectLayerEnabled]);
 
   useEffect(() => {
     const hotkeys = HotkeyManager.getInstance();
@@ -140,12 +187,44 @@ export function AppMenu() {
         stopPropagation: true,
       }
     );
+    const toggleVisibilityHandle = hotkeys.register(
+      "H",
+      () => {
+        const layerId = selectedLayerIdRef.current;
+
+        if (layerId) {
+          toggleEffectLayerEnabledRef.current(layerId);
+        }
+      },
+      {
+        ignoreInputs: true,
+        meta: { name: "Toggle Layer Visibility" },
+        preventDefault: true,
+        stopPropagation: true,
+      }
+    );
+    const deleteHandle = hotkeys.register(
+      deleteShortcutKey,
+      () => {
+        if (selectedLayerIdRef.current) {
+          deleteSelectedEffectLayerRef.current();
+        }
+      },
+      {
+        ignoreInputs: true,
+        meta: { name: "Delete Layer" },
+        preventDefault: true,
+        stopPropagation: true,
+      }
+    );
 
     return () => {
       undoHandle.unregister();
       redoHandle.unregister();
+      toggleVisibilityHandle.unregister();
+      deleteHandle.unregister();
     };
-  }, []);
+  }, [deleteShortcutKey]);
 
   function handleMenuCommand(id: MenuCommandId) {
     if (id === "edit.undo") {
@@ -158,7 +237,36 @@ export function AppMenu() {
       return;
     }
 
+    if (id === "layer.toggle-visibility") {
+      if (selectedLayerId) {
+        toggleEffectLayerEnabled(selectedLayerId);
+      }
+      return;
+    }
+
+    if (id === "layer.delete") {
+      deleteSelectedEffectLayer();
+      return;
+    }
+
     emitMenuEvent(id);
+  }
+
+  function renderCommandMenu(items: AppMenuItem[]) {
+    return (
+      <MenubarContent>
+        {items.map((menuItem) => (
+          <MenubarItem
+            disabled={menuItem.disabled}
+            key={menuItem.id}
+            onSelect={() => handleMenuCommand(menuItem.id)}
+          >
+            <span>{menuItem.label}</span>
+            {menuItem.shortcut ? <Shortcut keys={menuItem.shortcut} /> : null}
+          </MenubarItem>
+        ))}
+      </MenubarContent>
+    );
   }
 
   function renderViewMenu() {
@@ -249,20 +357,17 @@ export function AppMenu() {
           >
             {item.label}
           </MenubarTrigger>
-          {item.id === "view" ? renderViewMenu() : item.id === "sky" ? renderSkyMenu() : item.items || item.id === "edit" ? (
-            <MenubarContent>
-              {(item.id === "edit" ? editMenuItems : item.items ?? []).map((menuItem) => (
-                <MenubarItem
-                  disabled={menuItem.disabled}
-                  key={menuItem.id}
-                  onSelect={() => handleMenuCommand(menuItem.id)}
-                >
-                  <span>{menuItem.label}</span>
-                  {menuItem.shortcut ? <Shortcut keys={menuItem.shortcut} /> : null}
-                </MenubarItem>
-              ))}
-            </MenubarContent>
-          ) : null}
+          {item.id === "view"
+            ? renderViewMenu()
+            : item.id === "sky"
+              ? renderSkyMenu()
+              : item.id === "edit"
+                ? renderCommandMenu(editMenuItems)
+                : item.id === "layer"
+                  ? renderCommandMenu(layerMenuItems)
+                  : item.items
+                    ? renderCommandMenu(item.items)
+                    : null}
         </MenubarMenu>
       ))}
     </Menubar>

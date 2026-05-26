@@ -1,8 +1,14 @@
 import type { StateCreator } from "zustand";
 
 export type WorkspaceView = "editor" | "preview";
-export type MenuId = "file" | "edit" | "sky" | "view";
-export type MenuCommandId = "edit.redo" | "edit.undo" | "file.export" | "file.load";
+export type MenuId = "file" | "edit" | "layer" | "sky" | "view";
+export type MenuCommandId =
+  | "edit.redo"
+  | "edit.undo"
+  | "file.export"
+  | "file.load"
+  | "layer.delete"
+  | "layer.toggle-visibility";
 export type MenuEventId = MenuId | MenuCommandId;
 export type CameraRotationMode = "drag" | "scroll";
 export type SceneRenderMode = "live" | "texture-baked";

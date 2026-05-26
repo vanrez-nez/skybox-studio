@@ -309,11 +309,11 @@ export function GradientWidget() {
               aria-label="Gradient rotation"
               className="h-7 w-full overflow-visible bg-background pr-2 text-xs"
               inputMode="numeric"
-              onBlur={commitHistoryTransaction}
+              onBlur={() => commitHistoryTransaction()}
               onChange={(event) =>
                 setGradientRotation(parseNumericInput(event.target.value), { history: "skip" })
               }
-              onFocus={beginHistoryTransaction}
+              onFocus={() => beginHistoryTransaction()}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.currentTarget.blur();

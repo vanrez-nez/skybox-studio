@@ -6,6 +6,7 @@ import type { PersistStorage, StorageValue } from "zustand/middleware";
 import {
   createLayersSlice,
   layersHistoryParticipant,
+  type ImageState,
   type LayersSlice,
 } from "@/store/modules/layers";
 import { createSceneSlice, type SceneSlice } from "@/store/modules/scene";
@@ -18,17 +19,23 @@ export type HistoryParticipant<TStore> = {
   restore: (snapshot: unknown) => Partial<TStore>;
 };
 
+export type HistoryTransaction = {
+  scope: string;
+  snapshot: HistorySnapshot;
+};
+
 export type HistorySlice = {
-  activeHistorySnapshot: HistorySnapshot | null;
-  beginHistoryTransaction: () => void;
-  cancelHistoryTransaction: () => void;
-  commitHistoryTransaction: () => void;
+  activeHistoryTransaction: HistoryTransaction | null;
+  beginHistoryTransaction: (scope?: string) => void;
+  cancelHistoryTransaction: (scope?: string) => void;
+  commitHistoryTransaction: (scope?: string) => void;
   createHistoryCheckpoint: (state: WorkspaceStore) => Pick<
     HistorySlice,
-    "activeHistorySnapshot" | "historyFuture" | "historyPast"
+    "activeHistoryTransaction" | "historyFuture" | "historyPast"
   >;
   historyFuture: HistorySnapshot[];
   historyPast: HistorySnapshot[];
+  isHistoryTransactionActive: (scope?: string) => boolean;
   redoHistory: () => void;
   undoHistory: () => void;
 };
@@ -51,6 +58,26 @@ type PersistedWorkspacePreferences = Pick<
 >;
 
 let isStorageHistoryTransactionActive = false;
+const DEFAULT_HISTORY_TRANSACTION_SCOPE = "global";
+
+function omitRuntimeImageData(image: ImageState): ImageState {
+  return {
+    ...image,
+    pixels: null,
+    src: null,
+  };
+}
+
+function omitRuntimeImageLayerData(effectLayers: WorkspaceStore["effectLayers"]) {
+  return effectLayers.map((layer) =>
+    layer.type === "image"
+      ? {
+          ...layer,
+          params: omitRuntimeImageData(layer.params),
+        }
+      : layer
+  );
+}
 
 function beginStorageHistoryTransaction() {
   isStorageHistoryTransactionActive = true;
@@ -73,7 +100,16 @@ function createTransactionAwareSessionStorage<T>(): PersistStorage<T> {
         return;
       }
 
-      sessionStorage.setItem(name, JSON.stringify(value));
+      try {
+        sessionStorage.setItem(name, JSON.stringify(value));
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "QuotaExceededError") {
+          sessionStorage.removeItem(name);
+          return;
+        }
+
+        throw error;
+      }
     },
   };
 }
@@ -110,64 +146,88 @@ function areHistorySnapshotsEqual(firstSnapshot: HistorySnapshot, secondSnapshot
 function createHistorySlice(
   participants: Array<HistoryParticipant<WorkspaceStore>>
 ): StateCreator<WorkspaceStore, [], [], HistorySlice> {
-  return (set) => ({
-    activeHistorySnapshot: null,
-    beginHistoryTransaction: () =>
+  return (set, get) => ({
+    activeHistoryTransaction: null,
+    beginHistoryTransaction: (scope = DEFAULT_HISTORY_TRANSACTION_SCOPE) =>
       set((state) => {
-        if (state.activeHistorySnapshot) {
+        if (state.activeHistoryTransaction) {
           return state;
         }
 
         beginStorageHistoryTransaction();
 
         return {
-          activeHistorySnapshot: captureHistorySnapshot(participants, state),
+          activeHistoryTransaction: {
+            scope,
+            snapshot: captureHistorySnapshot(participants, state),
+          },
         };
       }),
-    cancelHistoryTransaction: () =>
-      set(() => {
-        endStorageHistoryTransaction();
-
-        return { activeHistorySnapshot: null };
-      }),
-    commitHistoryTransaction: () =>
+    cancelHistoryTransaction: (scope) =>
       set((state) => {
+        if (
+          scope &&
+          state.activeHistoryTransaction &&
+          state.activeHistoryTransaction.scope !== scope
+        ) {
+          return state;
+        }
+
         endStorageHistoryTransaction();
 
-        const transactionSnapshot = state.activeHistorySnapshot;
+        return { activeHistoryTransaction: null };
+      }),
+    commitHistoryTransaction: (scope) =>
+      set((state) => {
+        const transaction = state.activeHistoryTransaction;
 
-        if (!transactionSnapshot) {
+        if (scope && transaction && transaction.scope !== scope) {
+          return state;
+        }
+
+        endStorageHistoryTransaction();
+
+        if (!transaction) {
           return state;
         }
 
         const currentSnapshot = captureHistorySnapshot(participants, state);
 
-        if (areHistorySnapshotsEqual(transactionSnapshot, currentSnapshot)) {
+        if (areHistorySnapshotsEqual(transaction.snapshot, currentSnapshot)) {
           return {
-            activeHistorySnapshot: null,
+            activeHistoryTransaction: null,
           };
         }
 
         return {
-          activeHistorySnapshot: null,
+          activeHistoryTransaction: null,
           historyFuture: [],
-          historyPast: [...state.historyPast, transactionSnapshot],
+          historyPast: [...state.historyPast, transaction.snapshot],
         };
       }),
     createHistoryCheckpoint: (state) => {
       endStorageHistoryTransaction();
 
       return {
-        activeHistorySnapshot: null,
+        activeHistoryTransaction: null,
         historyFuture: [],
         historyPast: [
           ...state.historyPast,
-          state.activeHistorySnapshot ?? captureHistorySnapshot(participants, state),
+          state.activeHistoryTransaction?.snapshot ?? captureHistorySnapshot(participants, state),
         ],
       };
     },
     historyFuture: [],
     historyPast: [],
+    isHistoryTransactionActive: (scope) => {
+      const transaction = get().activeHistoryTransaction;
+
+      if (!transaction) {
+        return false;
+      }
+
+      return scope ? transaction.scope === scope : true;
+    },
     redoHistory: () =>
       set((state) => {
         endStorageHistoryTransaction();
@@ -180,7 +240,7 @@ function createHistorySlice(
 
         return {
           ...restoreHistorySnapshot(participants, next),
-          activeHistorySnapshot: null,
+          activeHistoryTransaction: null,
           historyFuture: state.historyFuture.slice(1),
           historyPast: [...state.historyPast, captureHistorySnapshot(participants, state)],
         };
@@ -197,7 +257,7 @@ function createHistorySlice(
 
         return {
           ...restoreHistorySnapshot(participants, previous),
-          activeHistorySnapshot: null,
+          activeHistoryTransaction: null,
           historyFuture: [captureHistorySnapshot(participants, state), ...state.historyFuture],
           historyPast: state.historyPast.slice(0, -1),
         };
@@ -220,10 +280,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       name: "skybox-studio-session",
       partialize: (state): PersistedWorkspacePreferences => ({
         activeView: state.activeView,
-        effectLayers: state.effectLayers,
+        effectLayers: omitRuntimeImageLayerData(state.effectLayers),
         fieldGradient: state.fieldGradient,
         gradient: state.gradient,
-        image: state.image,
+        image: omitRuntimeImageData(state.image),
         sceneRenderMode: state.sceneRenderMode === "texture-baked" ? "live" : state.sceneRenderMode,
         selectedLayerId: state.selectedLayerId,
         skyGeometryType: state.skyGeometryType,

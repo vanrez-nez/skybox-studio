@@ -2,17 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three/webgpu";
 
 import { useWorkspaceStore } from "@/store/app";
+import { getImageAsset } from "@/lib/image-assets";
 import type { SceneRenderMode, WorkspaceView } from "@/store/modules/scene";
 import { RotationGizmo } from "@/components/workspace/RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
 import type { EffectLayer } from "@/effects/effect-layer";
 import {
+  createAngularDecalPlacement,
   createSkyboxWireGeometry,
+  normalizeVector,
+  projectDirectionToImageUv,
   Skybox,
   type SkyboxManifest,
 } from "@/runtime/index";
 import { SkyboxOrbitControls } from "@/components/workspace/SkyboxOrbitControls";
-import type { ImagePlacement } from "@/store/modules/layers";
+import {
+  IMAGE_PLACEMENT_TRANSACTION_SCOPE,
+  type ImagePlacement,
+} from "@/store/modules/layers";
 
 type ThreeWorkspaceSceneProps = {
   mode: WorkspaceView;
@@ -50,29 +57,6 @@ function tupleToVector(tuple: VectorTuple) {
   return new THREE.Vector3(...tuple);
 }
 
-function getPlacementTangents(camera: THREE.PerspectiveCamera, centerDirection: THREE.Vector3) {
-  const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-  const tangentY = cameraUp.sub(
-    centerDirection.clone().multiplyScalar(cameraUp.dot(centerDirection))
-  );
-
-  if (tangentY.lengthSq() < 0.000001) {
-    tangentY.copy(
-      Math.abs(centerDirection.y) > 0.98
-        ? new THREE.Vector3(0, 0, 1)
-        : new THREE.Vector3(0, 1, 0)
-    );
-    tangentY.sub(centerDirection.clone().multiplyScalar(tangentY.dot(centerDirection)));
-  }
-
-  tangentY.normalize();
-
-  return {
-    tangentX: new THREE.Vector3().crossVectors(centerDirection, tangentY).normalize(),
-    tangentY,
-  };
-}
-
 function createImagePlacement(
   camera: THREE.PerspectiveCamera,
   canvas: HTMLCanvasElement,
@@ -85,52 +69,15 @@ function createImagePlacement(
     return null;
   }
 
-  const { tangentX, tangentY } = getPlacementTangents(camera, centerDirection);
   const radiansPerPixel = THREE.MathUtils.degToRad(camera.fov) / Math.max(1, canvas.height);
   const angularHeight = Math.max(0.001, image.height * radiansPerPixel);
   const angularWidth = Math.max(0.001, angularHeight * (image.width / image.height));
 
-  return {
+  return createAngularDecalPlacement({
     angularHeight,
     angularWidth,
     centerDirection: vectorToTuple(centerDirection),
-    projection: "angular-decal",
-    tangentX: vectorToTuple(tangentX),
-    tangentY: vectorToTuple(tangentY),
-  };
-}
-
-function getImageProjectionUv(direction: THREE.Vector3, placement: ImagePlacement) {
-  const centerDirection = tupleToVector(placement.centerDirection).normalize();
-  const tangentX = tupleToVector(placement.tangentX).normalize();
-  const tangentY = tupleToVector(placement.tangentY).normalize();
-  const normalizedDirection = direction.clone().normalize();
-  const denom = normalizedDirection.dot(centerDirection);
-
-  if (denom <= 0) {
-    return null;
-  }
-
-  const x = normalizedDirection.dot(tangentX) / denom;
-  const y = normalizedDirection.dot(tangentY) / denom;
-  const halfWidth = Math.tan(placement.angularWidth / 2);
-  const halfHeight = Math.tan(placement.angularHeight / 2);
-
-  if (
-    halfWidth <= 0 ||
-    halfHeight <= 0 ||
-    x < -halfWidth ||
-    x > halfWidth ||
-    y < -halfHeight ||
-    y > halfHeight
-  ) {
-    return null;
-  }
-
-  return {
-    u: x / (2 * halfWidth) + 0.5,
-    v: 0.5 - y / (2 * halfHeight),
-  };
+  });
 }
 
 function getPlacementDirectionFallback(placement: unknown) {
@@ -144,11 +91,54 @@ function getPlacementDirectionFallback(placement: unknown) {
   return tuple ? tupleToVector(tuple).normalize() : undefined;
 }
 
+function createSkyboxManifestDependencyKey(
+  layers: EffectLayer[],
+  previewBlendMode: ReturnType<typeof useWorkspaceStore.getState>["previewEffectLayerBlendMode"],
+  geometryType: string
+) {
+  return JSON.stringify({
+    geometryType,
+    layers: layers.map((layer) => {
+      const blendMode =
+        previewBlendMode?.layerId === layer.id ? previewBlendMode.blendMode : layer.blendMode;
+
+      if (layer.type === "image") {
+        return {
+          blendMode,
+          enabled: layer.enabled,
+          hasSrc: Boolean(layer.params.src),
+          height: layer.params.height,
+          id: layer.id,
+          name: layer.name,
+          opacity: layer.opacity,
+          type: layer.type,
+          width: layer.params.width,
+        };
+      }
+
+      return {
+        blendMode,
+        enabled: layer.enabled,
+        id: layer.id,
+        name: layer.name,
+        opacity: layer.opacity,
+        params: layer.params,
+        type: layer.type,
+      };
+    }),
+  });
+}
+
+function createImagePlacementKey(placement: ImagePlacement | null) {
+  return placement ? JSON.stringify(placement) : "null";
+}
+
 export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderRef = useRef<(() => void) | null>(null);
   const syncImagePlacementsRef = useRef<(() => void) | null>(null);
+  const syncImageLayerPlacementsRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
   const syncImageTexturesRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
   const syncHoveredImageLayerRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
   const setGroundPlaneHelperVisibleRef = useRef<((visible: boolean) => void) | null>(null);
@@ -167,6 +157,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const selectEffectLayer = useWorkspaceStore((state) => state.selectEffectLayer);
+  const setImageAssetSource = useWorkspaceStore((state) => state.setImageAssetSource);
   const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
   const previewEffectLayerBlendMode = useWorkspaceStore(
     (state) => state.previewEffectLayerBlendMode
@@ -176,6 +167,15 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const showGroundPlaneHelper = useWorkspaceStore((state) => state.showGroundPlaneHelper);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
   const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
+  const skyboxManifestDependencyKey = useMemo(
+    () =>
+      createSkyboxManifestDependencyKey(
+        effectLayers,
+        previewEffectLayerBlendMode,
+        skyGeometryType
+      ),
+    [effectLayers, previewEffectLayerBlendMode, skyGeometryType]
+  );
   const skyboxManifest = useMemo(
     () =>
       createSkyboxManifest(
@@ -183,12 +183,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         previewEffectLayerBlendMode,
         { type: skyGeometryType }
       ),
-    [effectLayers, previewEffectLayerBlendMode, skyGeometryType]
+    [skyboxManifestDependencyKey]
   );
 
   useEffect(() => {
     effectLayersRef.current = effectLayers;
     syncImagePlacementsRef.current?.();
+    syncImageLayerPlacementsRef.current?.(effectLayers);
     syncImageTexturesRef.current?.(effectLayers);
     syncHoveredImageLayerRef.current?.(effectLayers);
   }, [effectLayers]);
@@ -244,6 +245,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       string,
       { ready: boolean; src: string; texture: THREE.Texture }
     >();
+    const imageAssetUrlRecords = new Map<string, { assetId: string; src: string }>();
+    const pendingAssetLoads = new Set<string>();
+    const imagePlacementKeys = new Map<string, string>();
+    let pendingImagePlacementLayerId = "";
+    let pendingImagePlacement: ImagePlacement | null = null;
+    let pendingImagePlacementFrame: number | null = null;
     const liveSkybox = new Skybox().setRenderer(renderer).fromManifest(skyboxManifest).load();
     const skyGeometry = new THREE.LineSegments(
       createSkyboxWireGeometry({ type: currentSkyGeometryType }),
@@ -271,6 +278,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const imageDragState = {
       angularHeight: 0,
       angularWidth: 0,
+      baseAngularHeight: 0,
+      baseAngularWidth: 0,
       hasMoved: false,
       offsetX: 0,
       offsetY: 0,
@@ -369,11 +378,42 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       const activeImageLayerIds = new Set<string>();
 
       layers.forEach((layer) => {
-        if (layer.type !== "image" || !layer.params.src) {
+        if (layer.type !== "image") {
           return;
         }
 
         activeImageLayerIds.add(layer.id);
+
+        if (!layer.params.src && layer.params.assetId && !pendingAssetLoads.has(layer.id)) {
+          pendingAssetLoads.add(layer.id);
+          void getImageAsset(layer.params.assetId).then((blob) => {
+            pendingAssetLoads.delete(layer.id);
+
+            if (!blob || disposed) {
+              return;
+            }
+
+            const existingAssetUrlRecord = imageAssetUrlRecords.get(layer.id);
+
+            if (existingAssetUrlRecord) {
+              URL.revokeObjectURL(existingAssetUrlRecord.src);
+            }
+
+            const src = URL.createObjectURL(blob);
+
+            imageAssetUrlRecords.set(layer.id, {
+              assetId: layer.params.assetId ?? "",
+              src,
+            });
+            setImageAssetSource(layer.id, src);
+          });
+          return;
+        }
+
+        if (!layer.params.src) {
+          return;
+        }
+
         const existingRecord = imageTextureRecords.get(layer.id);
 
         if (existingRecord?.src === layer.params.src) {
@@ -450,6 +490,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
         record.texture.dispose();
         imageTextureRecords.delete(layerId);
+        const assetUrlRecord = imageAssetUrlRecords.get(layerId);
+
+        if (assetUrlRecord) {
+          URL.revokeObjectURL(assetUrlRecord.src);
+          imageAssetUrlRecords.delete(layerId);
+        }
         changed = true;
       });
 
@@ -460,6 +506,45 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     syncImageTexturesRef.current = syncImageTextures;
     syncImageTextures(effectLayersRef.current);
+
+    const syncImageLayerPlacements = (layers: EffectLayer[]) => {
+      let changed = false;
+      const activeImageLayerIds = new Set<string>();
+
+      layers.forEach((layer) => {
+        if (layer.type !== "image") {
+          return;
+        }
+
+        activeImageLayerIds.add(layer.id);
+        const placementKey = createImagePlacementKey(layer.params.placement);
+
+        if (imagePlacementKeys.get(layer.id) === placementKey) {
+          return;
+        }
+
+        imagePlacementKeys.set(layer.id, placementKey);
+        liveSkybox.setImageLayerPlacement(layer.id, layer.params.placement);
+        changed = true;
+      });
+
+      Array.from(imagePlacementKeys.keys()).forEach((layerId) => {
+        if (activeImageLayerIds.has(layerId)) {
+          return;
+        }
+
+        imagePlacementKeys.delete(layerId);
+        liveSkybox.setImageLayerPlacement(layerId, null);
+        changed = true;
+      });
+
+      if (changed) {
+        render();
+      }
+    };
+
+    syncImageLayerPlacementsRef.current = syncImageLayerPlacements;
+    syncImageLayerPlacements(effectLayersRef.current);
 
     const syncSkyGeometry = (nextManifest: SkyboxManifest) => {
       const nextSkyGeometryType = nextManifest.version === 2
@@ -645,7 +730,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         }
 
         const placement = layer.params.placement;
-        const uv = getImageProjectionUv(raycaster.ray.direction, placement);
+        const uv = projectDirectionToImageUv(vectorToTuple(raycaster.ray.direction), placement);
 
         if (uv) {
           return layer.id;
@@ -659,33 +744,81 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       setHoveredImageLayerId(getImageLayerHit(event));
     };
 
+    const syncImageLayerPlacementLive = (layerId: string, placement: ImagePlacement | null) => {
+      imagePlacementKeys.set(layerId, createImagePlacementKey(placement));
+      liveSkybox.setImageLayerPlacement(layerId, placement);
+      render();
+    };
+
+    const flushPendingImagePlacementStoreUpdate = () => {
+      if (pendingImagePlacementFrame !== null) {
+        window.cancelAnimationFrame(pendingImagePlacementFrame);
+        pendingImagePlacementFrame = null;
+      }
+
+      if (!pendingImagePlacementLayerId || !pendingImagePlacement) {
+        return;
+      }
+
+      setImagePlacement(pendingImagePlacementLayerId, pendingImagePlacement, { history: "skip" });
+      pendingImagePlacementLayerId = "";
+      pendingImagePlacement = null;
+    };
+
+    const scheduleImagePlacementStoreUpdate = (
+      layerId: string,
+      placement: ImagePlacement
+    ) => {
+      pendingImagePlacementLayerId = layerId;
+      pendingImagePlacement = placement;
+
+      if (pendingImagePlacementFrame !== null) {
+        return;
+      }
+
+      pendingImagePlacementFrame = window.requestAnimationFrame(() => {
+        pendingImagePlacementFrame = null;
+        flushPendingImagePlacementStoreUpdate();
+      });
+    };
+
     const updateImageDragPlacement = (event: PointerEvent) => {
       if (imageDragState.pointerId !== event.pointerId || !imageDragState.layerId) {
         return;
       }
 
       setRaycasterFromPointer(event);
-      const pointerDirection = raycaster.ray.direction.clone().normalize();
-      const pointerTangents = getPlacementTangents(camera, pointerDirection);
-      const centerDirection = pointerDirection
-        .clone()
-        .sub(pointerTangents.tangentX.multiplyScalar(imageDragState.offsetX))
-        .sub(pointerTangents.tangentY.multiplyScalar(imageDragState.offsetY))
-        .normalize();
-      const { tangentX, tangentY } = getPlacementTangents(camera, centerDirection);
-
-      const placement: ImagePlacement = {
+      const pointerDirection = vectorToTuple(raycaster.ray.direction.clone().normalize());
+      const pointerPlacement = createAngularDecalPlacement({
         angularHeight: imageDragState.angularHeight,
         angularWidth: imageDragState.angularWidth,
-        centerDirection: vectorToTuple(centerDirection),
-        projection: "angular-decal",
-        tangentX: vectorToTuple(tangentX),
-        tangentY: vectorToTuple(tangentY),
-      };
+        baseAngularHeight: imageDragState.baseAngularHeight,
+        baseAngularWidth: imageDragState.baseAngularWidth,
+        centerDirection: pointerDirection,
+      });
+      const centerDirection = normalizeVector([
+        pointerDirection[0] -
+          pointerPlacement.tangentX[0] * imageDragState.offsetX -
+          pointerPlacement.tangentY[0] * imageDragState.offsetY,
+        pointerDirection[1] -
+          pointerPlacement.tangentX[1] * imageDragState.offsetX -
+          pointerPlacement.tangentY[1] * imageDragState.offsetY,
+        pointerDirection[2] -
+          pointerPlacement.tangentX[2] * imageDragState.offsetX -
+          pointerPlacement.tangentY[2] * imageDragState.offsetY,
+      ]);
+
+      const placement: ImagePlacement = createAngularDecalPlacement({
+        angularHeight: imageDragState.angularHeight,
+        angularWidth: imageDragState.angularWidth,
+        baseAngularHeight: imageDragState.baseAngularHeight,
+        baseAngularWidth: imageDragState.baseAngularWidth,
+        centerDirection,
+      });
 
       imageDragState.placement = placement;
-      liveSkybox.setImageLayerPlacement(imageDragState.layerId, placement);
-      render();
+      syncImageLayerPlacementLive(imageDragState.layerId, placement);
+      scheduleImagePlacementStoreUpdate(imageDragState.layerId, placement);
     };
 
     lookAtAxisDirectionRef.current = lookAtAxisDirection;
@@ -701,19 +834,18 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         updateImageDragPlacement(event);
       }
 
-      if (imageDragState.placement) {
-        setImagePlacement(imageDragState.layerId, imageDragState.placement, { history: "skip" });
-      }
-
+      flushPendingImagePlacementStoreUpdate();
       imageDragState.layerId = "";
       imageDragState.placement = null;
       imageDragState.pointerId = -1;
       imageDragState.angularWidth = 0;
       imageDragState.angularHeight = 0;
+      imageDragState.baseAngularWidth = 0;
+      imageDragState.baseAngularHeight = 0;
       imageDragState.hasMoved = false;
       imageDragState.offsetX = 0;
       imageDragState.offsetY = 0;
-      commitHistoryTransaction();
+      commitHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE);
       canvas.style.cursor = "grab";
 
       if (canvas.hasPointerCapture(event.pointerId)) {
@@ -743,18 +875,20 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      const hitUv = getImageProjectionUv(raycaster.ray.direction, placement);
+      const hitUv = projectDirectionToImageUv(vectorToTuple(raycaster.ray.direction), placement);
       const halfWidth = Math.tan(placement.angularWidth / 2);
       const halfHeight = Math.tan(placement.angularHeight / 2);
 
       selectEffectLayer(hitLayerId);
       setHoveredImageLayerId(hitLayerId);
-      beginHistoryTransaction();
+      beginHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE);
       imageDragState.layerId = hitLayerId;
       imageDragState.pointerId = event.pointerId;
       imageDragState.placement = placement;
       imageDragState.angularWidth = placement.angularWidth;
       imageDragState.angularHeight = placement.angularHeight;
+      imageDragState.baseAngularWidth = placement.baseAngularWidth;
+      imageDragState.baseAngularHeight = placement.baseAngularHeight;
       imageDragState.hasMoved = false;
       imageDragState.offsetX = hitUv ? (hitUv.u - 0.5) * halfWidth * 2 : 0;
       imageDragState.offsetY = hitUv ? (0.5 - hitUv.v) * halfHeight * 2 : 0;
@@ -819,12 +953,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       setGroundPlaneHelperVisibleRef.current = null;
       setSkyGeometryVisibleRef.current = null;
       syncImagePlacementsRef.current = null;
+      syncImageLayerPlacementsRef.current = null;
       syncImageTexturesRef.current = null;
       syncHoveredImageLayerRef.current = null;
       updateSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
       resetOrientationRef.current = null;
       cancelCameraAnimation();
+      if (pendingImagePlacementFrame !== null) {
+        window.cancelAnimationFrame(pendingImagePlacementFrame);
+        pendingImagePlacementFrame = null;
+      }
       orbitControls.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -835,6 +974,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       resizeObserver.disconnect();
       imageTextureRecords.forEach((record) => record.texture.dispose());
       imageTextureRecords.clear();
+      imageAssetUrlRecords.forEach((record) => URL.revokeObjectURL(record.src));
+      imageAssetUrlRecords.clear();
       liveSkybox.dispose();
       groundPlaneHelper.geometry.dispose();
       groundPlaneHelper.material.dispose();

@@ -15,7 +15,10 @@ export type LockPair = ["x", "y"] | ["y", "z"] | ["x", "z"];
 export type PointInputLayout = "inline" | "vertical";
 
 export type PointInputChangeOptions = {
+  changedAxes?: PointAxis[];
+  delta?: number;
   history?: "checkpoint" | "skip";
+  sourceAxis?: PointAxis;
 };
 
 export type PointFieldConfig = {
@@ -155,20 +158,8 @@ function clampValue(value: number, min?: number, max?: number) {
   return nextValue;
 }
 
-function getStepPrecision(step: number) {
-  const stepText = `${step}`;
-
-  if (stepText.includes("e-")) {
-    return Number.parseInt(stepText.split("e-")[1] ?? "0", 10);
-  }
-
-  return stepText.includes(".") ? stepText.split(".")[1]?.length ?? 0 : 0;
-}
-
-function normalizeValue(value: number, step = 1, min?: number, max?: number) {
-  const precision = getStepPrecision(step);
-
-  return clampValue(Number(value.toFixed(precision)), min, max);
+function normalizeValue(value: number, min?: number, max?: number) {
+  return clampValue(value, min, max);
 }
 
 function getConnectedAxes(axis: PointAxis, activePairs: Set<string>, axes: PointAxis[]) {
@@ -342,6 +333,7 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
     const delta = nextAxisValue - currentAxisValue;
     const connectedAxes = getConnectedAxes(axis, activeLockKeys, axes);
     const nextValue = { ...value } as TValue;
+    const changedAxes: PointAxis[] = [];
 
     for (const connectedAxis of connectedAxes) {
       const typedAxis = connectedAxis as TAxis;
@@ -356,13 +348,18 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
 
       nextValue[typedAxis] = normalizeValue(
         axisValue,
-        getAxisStep(typedAxis),
         getAxisMin(typedAxis),
         getAxisMax(typedAxis)
       ) as TValue[TAxis];
+      changedAxes.push(typedAxis);
     }
 
-    onValueChange(nextValue, options);
+    onValueChange(nextValue, {
+      ...options,
+      changedAxes,
+      delta,
+      sourceAxis: axis,
+    });
   };
 
   const setExpanded = (nextExpanded: boolean) => {

@@ -14,9 +14,11 @@ import {
   imageLayerAdapter,
 } from "@/effects/effect-layer";
 import type { HistoryParticipant, WorkspaceStore } from "@/store/app";
+import type { SkyboxImagePlacement } from "@/runtime/manifest";
 
 export type GradientMode = "linear";
 export type FieldGradientMode = "inverse-distance" | "gaussian";
+export const IMAGE_PLACEMENT_TRANSACTION_SCOPE = "image-placement";
 
 export type GradientStop = {
   color: string;
@@ -49,6 +51,7 @@ export type FieldGradientState = {
 };
 
 export type ImageState = {
+  assetId: string | null;
   byteSize: number;
   fileName: string;
   height: number;
@@ -60,14 +63,7 @@ export type ImageState = {
   width: number;
 };
 
-export type ImagePlacement = {
-  angularHeight: number;
-  angularWidth: number;
-  centerDirection: [number, number, number];
-  projection: "angular-decal";
-  tangentX: [number, number, number];
-  tangentY: [number, number, number];
-};
+export type ImagePlacement = SkyboxImagePlacement;
 
 export type LayersHistorySnapshot = {
   effectLayers: EffectLayer[];
@@ -119,6 +115,7 @@ export type LayersSlice = {
   setGradientMode: (mode: GradientMode) => void;
   setGradientRotation: (rotation: number, options?: HistoryUpdateOptions) => void;
   setImage: (image: ImageState) => void;
+  setImageAssetSource: (id: string, src: string | null) => void;
   setImagePlacement: (
     id: string,
     placement: ImagePlacement | null,
@@ -201,6 +198,7 @@ export function createDefaultFieldGradientState(): FieldGradientState {
 
 export function createDefaultImageState(): ImageState {
   return {
+    assetId: null,
     byteSize: 0,
     fileName: "",
     height: 0,
@@ -279,7 +277,11 @@ function restoreLayersHistorySnapshot(snapshot: LayersHistorySnapshot) {
 }
 
 function getHistoryPatch(state: WorkspaceStore, options?: HistoryUpdateOptions) {
-  return options?.history === "skip" ? {} : state.createHistoryCheckpoint(state);
+  if (options?.history === "skip" || state.isHistoryTransactionActive()) {
+    return {};
+  }
+
+  return state.createHistoryCheckpoint(state);
 }
 
 function syncSelectedGradientLayer(state: LayersSlice, gradient: GradientState) {
@@ -678,7 +680,7 @@ export const createLayersSlice: StateCreator<
     set((state) => {
       const image = createDefaultImageState();
 
-      if (!state.image.src) {
+      if (!state.image.src && !state.image.assetId) {
         return state;
       }
 
@@ -855,6 +857,28 @@ export const createLayersSlice: StateCreator<
       image: cloneImageState(image),
       ...getHistoryPatch(state),
     })),
+  setImageAssetSource: (id, src) =>
+    set((state) => {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
+
+      if (layer?.type !== "image" || layer.params.src === src) {
+        return state;
+      }
+
+      const image = {
+        ...layer.params,
+        src,
+      };
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === id && effectLayer.type === "image"
+            ? { ...effectLayer, params: cloneImageState(image) }
+            : effectLayer
+        ),
+        ...(state.selectedLayerId === id ? { image: cloneImageState(image) } : {}),
+      };
+    }),
   setImagePlacement: (id, placement, options) =>
     set((state) => {
       const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);

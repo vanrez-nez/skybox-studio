@@ -70,21 +70,8 @@ function clampValue(value: number, min?: number, max?: number) {
   return nextValue;
 }
 
-function getStepPrecision(step: number) {
-  const stepText = `${step}`;
-
-  if (stepText.includes("e-")) {
-    return Number.parseInt(stepText.split("e-")[1] ?? "0", 10);
-  }
-
-  return stepText.includes(".") ? stepText.split(".")[1]?.length ?? 0 : 0;
-}
-
-function normalizeValue(value: number, step: number, min?: number, max?: number) {
-  const precision = getStepPrecision(step);
-  const roundedValue = Number(value.toFixed(precision));
-
-  return clampValue(roundedValue, min, max);
+function normalizeValue(value: number, min?: number, max?: number) {
+  return clampValue(value, min, max);
 }
 
 export function NumericDragInput({
@@ -127,7 +114,7 @@ export function NumericDragInput({
       return;
     }
 
-    const nextValue = normalizeValue(parsedValue, step, min, max);
+    const nextValue = normalizeValue(parsedValue, min, max);
 
     onValueChange(nextValue, { history: "checkpoint" });
     setDraftValue(formatValue(nextValue));
@@ -147,7 +134,7 @@ export function NumericDragInput({
   };
 
   const updateValueByStep = (direction: -1 | 1) => {
-    const nextValue = normalizeValue(value + direction * step, step, min, max);
+    const nextValue = normalizeValue(value + direction * step, min, max);
 
     onInteractionStart?.();
     onValueChange(nextValue, { history: "checkpoint" });
@@ -191,7 +178,7 @@ export function NumericDragInput({
     activeDrag.hasDragged = true;
 
     const stepDelta = Math.trunc(deltaX / Math.max(1, dragPixelsPerStep));
-    const nextValue = normalizeValue(activeDrag.startValue + stepDelta * step, step, min, max);
+    const nextValue = normalizeValue(activeDrag.startValue + stepDelta * step, min, max);
 
     onValueChange(nextValue, { history: "skip" });
     setDraftValue(formatValue(nextValue));

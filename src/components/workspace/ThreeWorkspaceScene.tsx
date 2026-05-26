@@ -271,6 +271,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const imageDragState = {
       angularHeight: 0,
       angularWidth: 0,
+      hasMoved: false,
+      offsetX: 0,
+      offsetY: 0,
       layerId: "",
       placement: null as ImagePlacement | null,
       pointerId: -1,
@@ -662,7 +665,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       setRaycasterFromPointer(event);
-      const centerDirection = raycaster.ray.direction.clone().normalize();
+      const pointerDirection = raycaster.ray.direction.clone().normalize();
+      const pointerTangents = getPlacementTangents(camera, pointerDirection);
+      const centerDirection = pointerDirection
+        .clone()
+        .sub(pointerTangents.tangentX.multiplyScalar(imageDragState.offsetX))
+        .sub(pointerTangents.tangentY.multiplyScalar(imageDragState.offsetY))
+        .normalize();
       const { tangentX, tangentY } = getPlacementTangents(camera, centerDirection);
 
       const placement: ImagePlacement = {
@@ -688,7 +697,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      updateImageDragPlacement(event);
+      if (imageDragState.hasMoved) {
+        updateImageDragPlacement(event);
+      }
 
       if (imageDragState.placement) {
         setImagePlacement(imageDragState.layerId, imageDragState.placement, { history: "skip" });
@@ -699,6 +710,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       imageDragState.pointerId = -1;
       imageDragState.angularWidth = 0;
       imageDragState.angularHeight = 0;
+      imageDragState.hasMoved = false;
+      imageDragState.offsetX = 0;
+      imageDragState.offsetY = 0;
       commitHistoryTransaction();
       canvas.style.cursor = "grab";
 
@@ -729,6 +743,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
+      const hitUv = getImageProjectionUv(raycaster.ray.direction, placement);
+      const halfWidth = Math.tan(placement.angularWidth / 2);
+      const halfHeight = Math.tan(placement.angularHeight / 2);
+
       selectEffectLayer(hitLayerId);
       setHoveredImageLayerId(hitLayerId);
       beginHistoryTransaction();
@@ -737,6 +755,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       imageDragState.placement = placement;
       imageDragState.angularWidth = placement.angularWidth;
       imageDragState.angularHeight = placement.angularHeight;
+      imageDragState.hasMoved = false;
+      imageDragState.offsetX = hitUv ? (hitUv.u - 0.5) * halfWidth * 2 : 0;
+      imageDragState.offsetY = hitUv ? (0.5 - hitUv.v) * halfHeight * 2 : 0;
       canvas.style.cursor = "grabbing";
       canvas.setPointerCapture(event.pointerId);
     };
@@ -744,6 +765,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const onPointerMove = (event: PointerEvent) => {
       if (imageDragState.pointerId === event.pointerId) {
         event.preventDefault();
+        imageDragState.hasMoved = true;
         updateImageDragPlacement(event);
         setHoveredImageLayerId(imageDragState.layerId);
         return;

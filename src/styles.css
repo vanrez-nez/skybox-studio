@@ -235,6 +235,17 @@
   border-color: var(--foreground);
 }
 
+.gradient-midpoint-handle {
+  border: 1px solid color-mix(in oklab, var(--foreground) 70%, var(--background));
+  background: color-mix(in oklab, var(--muted) 80%, var(--foreground));
+  box-shadow: 0 0 4px hsl(0 0% 0% / 0.45);
+}
+
+.gradient-midpoint-handle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .widget-panel {
   container-type: inline-size;
 }

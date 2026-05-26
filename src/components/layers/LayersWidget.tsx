@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { Eye, EyeOff, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
+import { Ellipsis, Eye, EyeOff, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -19,6 +19,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -476,35 +483,34 @@ export function LayersWidget() {
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-1 border-t pt-2">
-        <div className="flex items-center gap-1">
-          <Button
-            aria-label="Add gradient layer"
-            onClick={() => addEffectLayer("gradient")}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            <Palette />
-          </Button>
-          <Button
-            aria-label="Add field gradient layer"
-            onClick={() => addEffectLayer("field-gradient")}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            <Sparkles />
-          </Button>
-          <Button
-            aria-label="Add image layer"
-            onClick={() => addEffectLayer("image")}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            <ImagePlus />
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label="Add layer"
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+            >
+              <Ellipsis />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={() => addEffectLayer("gradient")}>
+                <Palette />
+                Gradient
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => addEffectLayer("field-gradient")}>
+                <Sparkles />
+                Field Gradient
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => addEffectLayer("image")}>
+                <ImagePlus />
+                Image
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           aria-label="Delete selected layer"
           className="hover:bg-card! hover:text-destructive"

@@ -24,6 +24,7 @@ export type GradientStop = {
   color: string;
   id: string;
   location: number;
+  midpoint: number;
   opacity: number;
 };
 
@@ -92,7 +93,7 @@ export type LayersSlice = {
   addEffectLayer: (type: EffectLayerType) => void;
   addFieldGradientAnchor: (anchor: Omit<FieldGradientAnchor, "id">) => void;
   clearPreviewEffectLayerBlendMode: () => void;
-  addGradientStop: (stop: Omit<GradientStop, "id">) => void;
+  addGradientStop: (stop: Omit<GradientStop, "id" | "midpoint"> & { midpoint?: number }) => void;
   deleteEffectLayer: (id: string) => void;
   deleteSelectedEffectLayer: () => void;
   randomizeFieldGradient: () => void;
@@ -135,8 +136,8 @@ export type LayersSlice = {
 };
 
 const defaultGradientStops: GradientStop[] = [
-  { id: "start", color: "#00ff00", location: 0, opacity: 100 },
-  { id: "end", color: "#00ff00", location: 100, opacity: 100 },
+  { id: "start", color: "#00ff00", location: 0, midpoint: 50, opacity: 100 },
+  { id: "end", color: "#00ff00", location: 100, midpoint: 50, opacity: 100 },
 ];
 
 const defaultFieldGradientAnchors: FieldGradientAnchor[] = [
@@ -149,6 +150,10 @@ const INITIAL_FIELD_GRADIENT_LAYER_ID = "layer-field-gradient";
 
 function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
+}
+
+function clampMidpoint(value: number) {
+  return Math.min(99, Math.max(1, value));
 }
 
 function clampUnit(value: number) {
@@ -452,13 +457,24 @@ export const createLayersSlice: StateCreator<
         ...stop,
         id: `stop-${Date.now()}`,
         location: clampPercent(stop.location),
+        midpoint: clampMidpoint(stop.midpoint ?? 50),
         opacity: clampPercent(stop.opacity),
       };
+      const nextStops = [...state.gradient.stops, nextStop];
+      const sortedStops = [...nextStops].sort(
+        (firstStop, secondStop) => firstStop.location - secondStop.location
+      );
+      const nextStopIndex = sortedStops.findIndex((sortedStop) => sortedStop.id === nextStop.id);
+      const previousStopId = nextStopIndex > 0 ? sortedStops[nextStopIndex - 1].id : null;
 
       const gradient = {
         ...state.gradient,
         selectedStopId: nextStop.id,
-        stops: [...state.gradient.stops, nextStop],
+        stops: nextStops.map((currentStop) =>
+          currentStop.id === nextStop.id || currentStop.id === previousStopId
+            ? { ...currentStop, midpoint: 50 }
+            : currentStop
+        ),
       };
 
       return {
@@ -587,6 +603,11 @@ export const createLayersSlice: StateCreator<
         return state;
       }
 
+      const sortedStopsBeforeDelete = [...state.gradient.stops].sort(
+        (firstStop, secondStop) => firstStop.location - secondStop.location
+      );
+      const deletedStopIndex = sortedStopsBeforeDelete.findIndex((stop) => stop.id === id);
+      const previousStopId = deletedStopIndex > 0 ? sortedStopsBeforeDelete[deletedStopIndex - 1].id : null;
       const nextStops = state.gradient.stops.filter((stop) => stop.id !== id);
 
       if (nextStops.length === state.gradient.stops.length) {
@@ -597,7 +618,9 @@ export const createLayersSlice: StateCreator<
         ...state.gradient,
         selectedStopId:
           state.gradient.selectedStopId === id ? nextStops[0].id : state.gradient.selectedStopId,
-        stops: nextStops,
+        stops: nextStops.map((stop) =>
+          previousStopId && stop.id === previousStopId ? { ...stop, midpoint: 50 } : stop
+        ),
       };
 
       return {
@@ -979,6 +1002,8 @@ export const createLayersSlice: StateCreator<
                 ...update,
                 location:
                   update.location === undefined ? stop.location : clampPercent(update.location),
+                midpoint:
+                  update.midpoint === undefined ? stop.midpoint : clampMidpoint(update.midpoint),
                 opacity: update.opacity === undefined ? stop.opacity : clampPercent(update.opacity),
               }
             : stop

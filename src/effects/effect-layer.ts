@@ -71,7 +71,10 @@ export type EffectLayerAdapter<TType extends EffectLayerType, TParams> = {
 export function cloneGradientState(gradient: GradientState): GradientState {
   return {
     ...gradient,
-    stops: gradient.stops.map((stop) => ({ ...stop })),
+    stops: gradient.stops.map((stop) => ({
+      ...stop,
+      midpoint: stop.midpoint ?? 50,
+    })),
   };
 }
 

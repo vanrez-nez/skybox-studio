@@ -26,6 +26,7 @@ function layerToManifestLayer(
           stops: layer.params.stops.map((stop) => ({
             color: stop.color,
             location: stop.location,
+            midpoint: stop.midpoint,
             opacity: stop.opacity,
           })),
         },

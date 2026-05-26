@@ -40,12 +40,31 @@ function gradientStopToCss(stop: GradientStop) {
   return `rgb(${red} ${green} ${blue} / ${clampPercent(stop.opacity)}%) ${stop.location}%`;
 }
 
+function getSegmentMidpointLocation(currentStop: GradientStop, nextStop: GradientStop) {
+  const span = nextStop.location - currentStop.location;
+
+  return currentStop.location + span * (clampMidpoint(currentStop.midpoint) / 100);
+}
+
 function getGradientBackground(stops: GradientStop[]) {
-  return `linear-gradient(90deg, ${sortStops(stops).map(gradientStopToCss).join(", ")})`;
+  const sortedStops = sortStops(stops);
+  const entries = sortedStops.flatMap((stop, stopIndex) => {
+    const nextStop = sortedStops[stopIndex + 1];
+
+    return nextStop
+      ? [gradientStopToCss(stop), `${getSegmentMidpointLocation(stop, nextStop)}%`]
+      : [gradientStopToCss(stop)];
+  });
+
+  return `linear-gradient(90deg, ${entries.join(", ")})`;
 }
 
 function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
+}
+
+function clampMidpoint(value: number) {
+  return Math.min(99, Math.max(1, value));
 }
 
 function hexToRgb(color: string): [number, number, number] {
@@ -66,6 +85,14 @@ function rgbToHex(color: [number, number, number]) {
 
 function mix(firstValue: number, secondValue: number, amount: number) {
   return firstValue + (secondValue - firstValue) * amount;
+}
+
+function remapMidpoint(localT: number, midpoint: number) {
+  if (localT <= midpoint) {
+    return localT / Math.max(midpoint * 2, 0.00001);
+  }
+
+  return 0.5 + (localT - midpoint) / Math.max((1 - midpoint) * 2, 0.00001);
 }
 
 function sampleStopColor(stops: GradientStop[], location: number) {
@@ -95,13 +122,14 @@ function sampleStopColor(stops: GradientStop[], location: number) {
 
     const span = nextStop.location - currentStop.location;
     const localT = span <= 0 ? 0 : (location - currentStop.location) / span;
+    const midpointT = remapMidpoint(localT, clampMidpoint(currentStop.midpoint) / 100);
     const currentColor = hexToRgb(currentStop.color);
     const nextColor = hexToRgb(nextStop.color);
 
     return rgbToHex([
-      mix(currentColor[0], nextColor[0], localT),
-      mix(currentColor[1], nextColor[1], localT),
-      mix(currentColor[2], nextColor[2], localT),
+      mix(currentColor[0], nextColor[0], midpointT),
+      mix(currentColor[1], nextColor[1], midpointT),
+      mix(currentColor[2], nextColor[2], midpointT),
     ]);
   }
 
@@ -110,7 +138,12 @@ function sampleStopColor(stops: GradientStop[], location: number) {
 
 export function GradientWidget() {
   const gradientTrackRef = useRef<HTMLDivElement>(null);
+  const activeMidpointDragRef = useRef<{ id: string; pointerId: number } | null>(null);
   const activeStopDragRef = useRef<{ id: string; pointerId: number } | null>(null);
+  const midpointDragListenersRef = useRef<{
+    end: (event: globalThis.PointerEvent) => void;
+    move: (event: globalThis.PointerEvent) => void;
+  } | null>(null);
   const stopDragListenersRef = useRef<{
     end: (event: globalThis.PointerEvent) => void;
     move: (event: globalThis.PointerEvent) => void;
@@ -129,6 +162,7 @@ export function GradientWidget() {
     gradient.stops.find((stop) => stop.id === gradient.selectedStopId) ?? gradient.stops[0];
   const gradientTrackBackground = getGradientBackground(gradient.stops);
   const canRemoveStop = gradient.stops.length > 2;
+  const sortedStops = sortStops(gradient.stops);
   const getLocationFromPointer = (clientX: number) => {
     const track = gradientTrackRef.current;
 
@@ -152,13 +186,39 @@ export function GradientWidget() {
     updateGradientStop(id, { location: nextLocation }, { history: "skip" });
   };
 
+  const getMidpointFromPointer = (currentStop: GradientStop, nextStop: GradientStop, clientX: number) => {
+    const location = getLocationFromPointer(clientX);
+    const span = nextStop.location - currentStop.location;
+
+    if (location === null || span <= 0) {
+      return null;
+    }
+
+    return clampMidpoint(Math.round(((location - currentStop.location) / span) * 100));
+  };
+
+  const updateMidpointFromPointer = (
+    currentStop: GradientStop,
+    nextStop: GradientStop,
+    clientX: number
+  ) => {
+    const midpoint = getMidpointFromPointer(currentStop, nextStop, clientX);
+
+    if (midpoint === null) {
+      return;
+    }
+
+    updateGradientStop(currentStop.id, { midpoint }, { history: "skip" });
+  };
+
   const handleGradientTrackDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target;
     const location = getLocationFromPointer(event.clientX);
 
     if (
       location === null ||
-      (target instanceof Element && target.closest('button[aria-label^="Gradient stop"]'))
+      (target instanceof Element &&
+        target.closest('button[aria-label^="Gradient stop"], button[aria-label^="Gradient midpoint"]'))
     ) {
       return;
     }
@@ -181,6 +241,19 @@ export function GradientWidget() {
     document.removeEventListener("pointerup", listeners.end);
     document.removeEventListener("pointercancel", listeners.end);
     stopDragListenersRef.current = null;
+  };
+
+  const clearMidpointDragListeners = () => {
+    const listeners = midpointDragListenersRef.current;
+
+    if (!listeners) {
+      return;
+    }
+
+    document.removeEventListener("pointermove", listeners.move);
+    document.removeEventListener("pointerup", listeners.end);
+    document.removeEventListener("pointercancel", listeners.end);
+    midpointDragListenersRef.current = null;
   };
 
   const handleStopPointerDown = (event: PointerEvent<HTMLButtonElement>, id: string) => {
@@ -218,6 +291,88 @@ export function GradientWidget() {
     document.addEventListener("pointermove", move, { passive: false });
     document.addEventListener("pointerup", end);
     document.addEventListener("pointercancel", end);
+  };
+
+  const handleMidpointPointerDown = (
+    event: PointerEvent<HTMLButtonElement>,
+    currentStop: GradientStop,
+    nextStop: GradientStop
+  ) => {
+    event.preventDefault();
+    clearMidpointDragListeners();
+    activeMidpointDragRef.current = { id: currentStop.id, pointerId: event.pointerId };
+    beginHistoryTransaction();
+    updateMidpointFromPointer(currentStop, nextStop, event.clientX);
+
+    const move = (nativeEvent: globalThis.PointerEvent) => {
+      const activeDrag = activeMidpointDragRef.current;
+
+      if (!activeDrag || activeDrag.pointerId !== nativeEvent.pointerId) {
+        return;
+      }
+
+      const latestStops = sortStops(useWorkspaceStore.getState().gradient.stops);
+      const latestCurrentStop = latestStops.find((stop) => stop.id === activeDrag.id);
+      const latestCurrentIndex = latestCurrentStop ? latestStops.indexOf(latestCurrentStop) : -1;
+      const latestNextStop = latestCurrentIndex >= 0 ? latestStops[latestCurrentIndex + 1] : undefined;
+
+      if (!latestCurrentStop || !latestNextStop) {
+        return;
+      }
+
+      nativeEvent.preventDefault();
+      updateMidpointFromPointer(latestCurrentStop, latestNextStop, nativeEvent.clientX);
+    };
+
+    const end = (nativeEvent: globalThis.PointerEvent) => {
+      const activeDrag = activeMidpointDragRef.current;
+
+      if (!activeDrag || activeDrag.pointerId !== nativeEvent.pointerId) {
+        return;
+      }
+
+      activeMidpointDragRef.current = null;
+      clearMidpointDragListeners();
+      commitHistoryTransaction();
+    };
+
+    midpointDragListenersRef.current = { end, move };
+    document.addEventListener("pointermove", move, { passive: false });
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+  };
+
+  const handleMidpointKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentStop: GradientStop
+  ) => {
+    const keyMidpointChange: Record<string, number> = {
+      ArrowDown: -1,
+      ArrowLeft: -1,
+      ArrowRight: 1,
+      ArrowUp: 1,
+    };
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      updateGradientStop(currentStop.id, { midpoint: 1 });
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      updateGradientStop(currentStop.id, { midpoint: 99 });
+      return;
+    }
+
+    const change = keyMidpointChange[event.key];
+
+    if (change === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    updateGradientStop(currentStop.id, { midpoint: currentStop.midpoint + change });
   };
 
   const handleStopKeyDown = (event: KeyboardEvent<HTMLButtonElement>, stop: GradientStop) => {
@@ -264,6 +419,7 @@ export function GradientWidget() {
   useEffect(
     () => () => {
       clearStopDragListeners();
+      clearMidpointDragListeners();
     },
     []
   );
@@ -315,7 +471,27 @@ export function GradientWidget() {
               >
                 <div className="h-full" style={{ background: gradientTrackBackground }} />
               </div>
-              {sortStops(gradient.stops).map((stop) => {
+              {sortedStops.slice(0, -1).map((stop, stopIndex) => {
+                const nextStop = sortedStops[stopIndex + 1];
+                const midpointLocation = getSegmentMidpointLocation(stop, nextStop);
+
+                return (
+                  <button
+                    aria-label={`Gradient midpoint ${Math.round(stop.location)}% to ${Math.round(nextStop.location)}%`}
+                    aria-valuemax={99}
+                    aria-valuemin={1}
+                    aria-valuenow={Math.round(clampMidpoint(stop.midpoint))}
+                    className="gradient-midpoint-handle absolute top-0 size-2 -translate-x-1/2 touch-none rotate-45"
+                    key={`${stop.id}-${nextStop.id}`}
+                    onKeyDown={(event) => handleMidpointKeyDown(event, stop)}
+                    onPointerDown={(event) => handleMidpointPointerDown(event, stop, nextStop)}
+                    role="slider"
+                    style={{ left: `${midpointLocation}%` }}
+                    type="button"
+                  />
+                );
+              })}
+              {sortedStops.map((stop) => {
                 const isSelected = stop.id === selectedStop.id;
 
                 return (

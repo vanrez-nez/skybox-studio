@@ -1,11 +1,12 @@
-import type { FieldGradientState, GradientState, ImageState } from "@/store/modules/layers";
+import type { FieldGradientState, GradientState, ImageState, SpotState } from "@/store/modules/layers";
 import {
   normalizeBlendMode,
   type EffectLayerBlendMode,
 } from "@/effects/blend-modes";
 import { normalizeImagePlacement } from "@/runtime/image-placement-transform";
+import { normalizeSpotParams } from "@/runtime/spot-transform";
 
-export type EffectLayerType = "gradient" | "field-gradient" | "image";
+export type EffectLayerType = "gradient" | "field-gradient" | "image" | "spot";
 export type { EffectLayerBlendMode };
 
 export type SerializedGradientEffect = {
@@ -23,9 +24,18 @@ export type SerializedImageEffect = {
   type: "image";
 };
 
+export type SerializedSpotEffect = {
+  params: SpotState;
+  type: "spot";
+};
+
 export type SerializedEffectLayer = {
   blendMode?: EffectLayerBlendMode;
-  effect: SerializedGradientEffect | SerializedFieldGradientEffect | SerializedImageEffect;
+  effect:
+    | SerializedGradientEffect
+    | SerializedFieldGradientEffect
+    | SerializedImageEffect
+    | SerializedSpotEffect;
   enabled: boolean;
   id: string;
   name: string;
@@ -59,6 +69,15 @@ export type EffectLayer =
       opacity: number;
       params: ImageState;
       type: "image";
+    }
+  | {
+      blendMode: EffectLayerBlendMode;
+      enabled: boolean;
+      id: string;
+      name: string;
+      opacity: number;
+      params: SpotState;
+      type: "spot";
     };
 
 export type EffectLayerFocusTarget = {
@@ -105,6 +124,20 @@ export function cloneImageState(image: ImageState): ImageState {
     pixels: image.pixels ? [...image.pixels] : null,
     placement: cloneImagePlacement(image.placement),
     src: image.src ?? null,
+  };
+}
+
+export function cloneSpotState(spot: SpotState): SpotState {
+  const normalizedSpot = normalizeSpotParams(spot);
+
+  return {
+    ...normalizedSpot,
+    selectedStopId: spot.selectedStopId ?? "spot-start",
+    stops: normalizedSpot.stops.map((stop, index) => ({
+      ...stop,
+      id: spot.stops[index]?.id ?? `spot-stop-${index}`,
+      midpoint: stop.midpoint ?? 50,
+    })),
   };
 }
 
@@ -159,6 +192,13 @@ export const imageLayerAdapter: EffectLayerAdapter<"image", ImageState> = {
   type: "image",
 };
 
+export const spotLayerAdapter: EffectLayerAdapter<"spot", SpotState> = {
+  getDefaultName: () => "Spot",
+  load: (serialized) => cloneSpotState(serialized.params),
+  serialize: (params) => ({ params: cloneSpotState(params), type: "spot" }),
+  type: "spot",
+};
+
 export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer {
   return {
     blendMode: layer.blendMode,
@@ -167,7 +207,9 @@ export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer 
         ? gradientLayerAdapter.serialize(layer.params)
         : layer.type === "field-gradient"
           ? fieldGradientLayerAdapter.serialize(layer.params)
-          : imageLayerAdapter.serialize(layer.params),
+          : layer.type === "image"
+            ? imageLayerAdapter.serialize(layer.params)
+            : spotLayerAdapter.serialize(layer.params),
     enabled: layer.enabled,
     id: layer.id,
     name: layer.name,
@@ -200,13 +242,25 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
     };
   }
 
+  if (serialized.effect.type === "image") {
+    return {
+      blendMode: normalizeBlendMode(serialized.blendMode),
+      enabled: serialized.enabled,
+      id: serialized.id,
+      name: serialized.name,
+      opacity: serialized.opacity ?? 100,
+      params: imageLayerAdapter.load(serialized.effect),
+      type: "image",
+    };
+  }
+
   return {
     blendMode: normalizeBlendMode(serialized.blendMode),
     enabled: serialized.enabled,
     id: serialized.id,
     name: serialized.name,
     opacity: serialized.opacity ?? 100,
-    params: imageLayerAdapter.load(serialized.effect),
-    type: "image",
+    params: spotLayerAdapter.load(serialized.effect),
+    type: "spot",
   };
 }

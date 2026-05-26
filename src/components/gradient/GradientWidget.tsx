@@ -11,22 +11,12 @@ import { Trash2 } from "lucide-react";
 import { FloatingColorPicker } from "@/components/gradient/FloatingColorPicker";
 import { Button } from "@/components/ui/button";
 import { RotationField } from "@/components/ui/rotation-field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SliderInput } from "@/components/ui/slider-input";
 import { Widget } from "@/components/widgets/Widget";
 import { gradientLayerAdapter } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
-import {
-  type GradientMode,
-  type GradientStop,
-} from "@/store/modules/layers";
+import type { GradientStop } from "@/store/modules/layers";
 
 export const gradientEffectLayerAdapter = gradientLayerAdapter;
 
@@ -155,7 +145,6 @@ export function GradientWidget() {
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const removeGradientStop = useWorkspaceStore((state) => state.removeGradientStop);
   const selectGradientStop = useWorkspaceStore((state) => state.selectGradientStop);
-  const setGradientMode = useWorkspaceStore((state) => state.setGradientMode);
   const setGradientRotation = useWorkspaceStore((state) => state.setGradientRotation);
   const updateGradientStop = useWorkspaceStore((state) => state.updateGradientStop);
   const selectedStop =
@@ -427,24 +416,6 @@ export function GradientWidget() {
   return (
     <Widget title="Gradient" contentClassName="space-y-5">
       <div className="widget-inline-fields">
-        <div className="widget-field widget-field-mode">
-          <span className="text-xs">Mode</span>
-          <Select onValueChange={(value) => setGradientMode(value as GradientMode)} value={gradient.mode}>
-            <SelectTrigger
-              aria-label="Gradient mode"
-              className="w-full bg-background text-xs"
-              size="xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem className="text-xs" value="linear">
-                Linear
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
         <RotationField
           ariaLabel="Gradient rotation"
           inputAriaLabel="Gradient rotation"
@@ -467,7 +438,7 @@ export function GradientWidget() {
               onDoubleClick={handleGradientTrackDoubleClick}
             >
               <div
-                className="transparent-checker absolute top-3 right-0 left-0 h-3 overflow-hidden rounded-full border"
+                className="transparent-checker-sm absolute top-3 right-0 left-0 h-3 overflow-hidden rounded-full border"
               >
                 <div className="h-full" style={{ background: gradientTrackBackground }} />
               </div>

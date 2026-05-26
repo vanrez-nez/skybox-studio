@@ -56,6 +56,7 @@ type PersistedWorkspacePreferences = Pick<
   | "showGroundPlaneHelper"
   | "showOrientationGizmo"
   | "showSkyGeometry"
+  | "spot"
 >;
 
 let isStorageHistoryTransactionActive = false;
@@ -314,6 +315,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         showGroundPlaneHelper: state.showGroundPlaneHelper,
         showOrientationGizmo: state.showOrientationGizmo,
         showSkyGeometry: state.showSkyGeometry,
+        spot: state.spot,
       }),
       storage: createTransactionAwareSessionStorage<PersistedWorkspacePreferences>(),
       version: 2,

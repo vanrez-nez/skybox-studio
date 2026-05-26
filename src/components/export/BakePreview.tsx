@@ -221,7 +221,7 @@ export function BakePreview() {
         <span className="text-xs text-muted-foreground">Height {exportHeight}</span>
       </div>
 
-      <div className="transparent-checker flex aspect-[2/1] max-h-[55vh] min-h-48 items-center justify-center overflow-hidden rounded-md border">
+      <div className="transparent-checker-sm flex aspect-[2/1] max-h-[55vh] min-h-48 items-center justify-center overflow-hidden rounded-md border">
         {status === "loading" ? (
           <Loader2 className="animate-spin text-muted-foreground" />
         ) : previewUrl ? (

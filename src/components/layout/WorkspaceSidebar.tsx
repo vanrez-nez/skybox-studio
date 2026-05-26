@@ -2,6 +2,7 @@ import { FieldGradientWidget } from "@/components/gradient/FieldGradientWidget";
 import { GradientWidget } from "@/components/gradient/GradientWidget";
 import { ImageWidget } from "@/components/image/ImageWidget";
 import { LayersWidget } from "@/components/layers/LayersWidget";
+import { SpotWidget } from "@/components/spot/SpotWidget";
 import { useWorkspaceStore } from "@/store/app";
 
 export function WorkspaceSidebar() {
@@ -15,6 +16,7 @@ export function WorkspaceSidebar() {
       {selectedLayer?.type === "gradient" ? <GradientWidget /> : null}
       {selectedLayer?.type === "field-gradient" ? <FieldGradientWidget /> : null}
       {selectedLayer?.type === "image" ? <ImageWidget /> : null}
+      {selectedLayer?.type === "spot" ? <SpotWidget /> : null}
     </aside>
   );
 }

@@ -226,6 +226,21 @@
   background-size: 32px 32px;
 }
 
+.transparent-checker-sm {
+  background-color: var(--background);
+  background-image:
+    linear-gradient(45deg, hsl(0 0% 100% / 0.18) 25%, transparent 25%),
+    linear-gradient(-45deg, hsl(0 0% 100% / 0.18) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, hsl(0 0% 100% / 0.18) 75%),
+    linear-gradient(-45deg, transparent 75%, hsl(0 0% 100% / 0.18) 75%);
+  background-position:
+    0 0,
+    0 5px,
+    5px -5px,
+    -5px 0;
+  background-size: 10px 10px;
+}
+
 .gradient-stop-handle {
   border: 2px solid var(--card);
   box-shadow: 0 0 6px hsl(0 0% 0% / 0.55);

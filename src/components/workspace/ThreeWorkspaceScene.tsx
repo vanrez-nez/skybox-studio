@@ -19,6 +19,7 @@ import {
   projectDirectionToImageUv,
   Skybox,
   type SkyboxManifest,
+  spotContainsDirection,
 } from "@/runtime/index";
 import { SkyboxOrbitControls } from "@/components/workspace/SkyboxOrbitControls";
 import {
@@ -134,6 +135,59 @@ function createImagePlacementKey(placement: ImagePlacement | null) {
   return placement ? JSON.stringify(placement) : "null";
 }
 
+function getProjectedOffset(
+  direction: VectorTuple,
+  centerDirection: VectorTuple,
+  angularRadius: number
+) {
+  const frame = createAngularDecalPlacement({
+    angularHeight: angularRadius * 2,
+    angularWidth: angularRadius * 2,
+    centerDirection,
+  });
+  const projectedDirection = normalizeVector(direction);
+  const denom = Math.max(
+    0.000001,
+    projectedDirection[0] * frame.centerDirection[0] +
+      projectedDirection[1] * frame.centerDirection[1] +
+      projectedDirection[2] * frame.centerDirection[2]
+  );
+
+  return {
+    x:
+      (projectedDirection[0] * frame.tangentX[0] +
+        projectedDirection[1] * frame.tangentX[1] +
+        projectedDirection[2] * frame.tangentX[2]) /
+      denom,
+    y:
+      (projectedDirection[0] * frame.tangentY[0] +
+        projectedDirection[1] * frame.tangentY[1] +
+        projectedDirection[2] * frame.tangentY[2]) /
+      denom,
+  };
+}
+
+function getDraggedCenterDirection(
+  pointerDirection: VectorTuple,
+  angularRadius: number,
+  offsetX: number,
+  offsetY: number
+) {
+  const frame = createAngularDecalPlacement({
+    angularHeight: angularRadius * 2,
+    angularWidth: angularRadius * 2,
+    centerDirection: pointerDirection,
+  });
+
+  return normalizeVector([
+    pointerDirection[0] - frame.tangentX[0] * offsetX - frame.tangentY[0] * offsetY,
+    pointerDirection[1] - frame.tangentX[1] * offsetX - frame.tangentY[1] * offsetY,
+    pointerDirection[2] - frame.tangentX[2] * offsetX - frame.tangentY[2] * offsetY,
+  ]);
+}
+
+const SPOT_PLACEMENT_TRANSACTION_SCOPE = "spot-placement";
+
 export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -167,6 +221,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const setImageAssetSource = useWorkspaceStore((state) => state.setImageAssetSource);
   const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
+  const setSpotPosition = useWorkspaceStore((state) => state.setSpotPosition);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const lastLayerFocusRequest = useWorkspaceStore((state) => state.lastLayerFocusRequest);
   const previewEffectLayerBlendMode = useWorkspaceStore(
@@ -306,6 +361,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       rotation: 0,
       layerId: "",
       placement: null as ImagePlacement | null,
+      pointerId: -1,
+    };
+    const spotDragState = {
+      angularRadius: 0,
+      hasMoved: false,
+      layerId: "",
+      offsetX: 0,
+      offsetY: 0,
       pointerId: -1,
     };
     let hoveredImageLayerId: string | null = null;
@@ -808,6 +871,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           continue;
         }
 
+        if (layer.type === "spot") {
+          if (spotContainsDirection(direction, layer.params)) {
+            hits.push({ layerId: layer.id, type: layer.type });
+          }
+          continue;
+        }
+
         if (layer.type !== "image") {
           hits.push({ layerId: layer.id, type: layer.type });
           continue;
@@ -912,6 +982,30 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       scheduleImagePlacementStoreUpdate(imageDragState.layerId, placement);
     };
 
+    const updateSpotDragPosition = (event: PointerEvent) => {
+      if (spotDragState.pointerId !== event.pointerId || !spotDragState.layerId) {
+        return;
+      }
+
+      setRaycasterFromPointer(event);
+      const pointerDirection = vectorToTuple(raycaster.ray.direction.clone().normalize());
+      const centerDirection = getDraggedCenterDirection(
+        pointerDirection,
+        spotDragState.angularRadius,
+        spotDragState.offsetX,
+        spotDragState.offsetY
+      );
+
+      setSpotPosition(centerDirection, { history: "skip" });
+      const state = useWorkspaceStore.getState();
+      liveSkybox.setManifest(createSkyboxManifest(
+        state.effectLayers,
+        state.previewEffectLayerBlendMode,
+        { type: state.skyGeometryType }
+      ));
+      render();
+    };
+
     lookAtAxisDirectionRef.current = lookAtAxisDirection;
     focusLayerRef.current = focusLayer;
     resetOrientationRef.current = resetOrientation;
@@ -939,6 +1033,29 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       imageDragState.offsetX = 0;
       imageDragState.offsetY = 0;
       commitHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE);
+      canvas.style.cursor = "grab";
+
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+    };
+
+    const releaseSpotPointer = (event: PointerEvent) => {
+      if (spotDragState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      if (spotDragState.hasMoved) {
+        updateSpotDragPosition(event);
+      }
+
+      spotDragState.layerId = "";
+      spotDragState.pointerId = -1;
+      spotDragState.angularRadius = 0;
+      spotDragState.offsetX = 0;
+      spotDragState.offsetY = 0;
+      spotDragState.hasMoved = false;
+      commitHistoryTransaction(SPOT_PLACEMENT_TRANSACTION_SCOPE);
       canvas.style.cursor = "grab";
 
       if (canvas.hasPointerCapture(event.pointerId)) {
@@ -990,6 +1107,42 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       return true;
     };
 
+    const beginSpotDrag = (event: PointerEvent, hit: SceneLayerHit) => {
+      if (hit.type !== "spot") {
+        return false;
+      }
+
+      const hitLayer = effectLayersRef.current.find(
+        (layer): layer is Extract<EffectLayer, { type: "spot" }> =>
+          layer.id === hit.layerId && layer.type === "spot"
+      );
+
+      if (!hitLayer) {
+        return false;
+      }
+
+      setRaycasterFromPointer(event);
+      const pointerDirection = vectorToTuple(raycaster.ray.direction.clone().normalize());
+      const offset = getProjectedOffset(
+        pointerDirection,
+        hitLayer.params.centerDirection,
+        hitLayer.params.angularRadius
+      );
+
+      selectSceneLayerHit(hit);
+      beginHistoryTransaction(SPOT_PLACEMENT_TRANSACTION_SCOPE);
+      spotDragState.layerId = hit.layerId;
+      spotDragState.pointerId = event.pointerId;
+      spotDragState.angularRadius = hitLayer.params.angularRadius;
+      spotDragState.offsetX = offset.x;
+      spotDragState.offsetY = offset.y;
+      spotDragState.hasMoved = false;
+      canvas.style.cursor = "grabbing";
+      canvas.setPointerCapture(event.pointerId);
+
+      return true;
+    };
+
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) {
         return;
@@ -1013,9 +1166,21 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
+      const selectedSpotHit = hits.find(
+        (hit) => hit.type === "spot" && hit.layerId === selectedLayerIdRef.current
+      );
+
+      if (selectedSpotHit && beginSpotDrag(event, selectedSpotHit)) {
+        return;
+      }
+
       const topHit = hits[0];
 
       if (topHit.type === "image" && beginImageDrag(event, topHit)) {
+        return;
+      }
+
+      if (topHit.type === "spot" && beginSpotDrag(event, topHit)) {
         return;
       }
 
@@ -1052,6 +1217,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
+      if (spotDragState.pointerId === event.pointerId) {
+        event.preventDefault();
+        spotDragState.hasMoved = true;
+        updateSpotDragPosition(event);
+        return;
+      }
+
       if (!orbitControls.isDragging) {
         updateHoveredImageLayerFromPointer(event);
         canvas.style.cursor = "grab";
@@ -1066,9 +1238,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     canvas.addEventListener("dblclick", onDoubleClick);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerleave", clearHoveredImageLayer);
-    canvas.addEventListener("pointerup", releaseImagePointer);
-    canvas.addEventListener("pointercancel", releaseImagePointer);
-    canvas.addEventListener("lostpointercapture", releaseImagePointer);
+    const releaseScenePointer = (event: PointerEvent) => {
+      releaseImagePointer(event);
+      releaseSpotPointer(event);
+    };
+
+    canvas.addEventListener("pointerup", releaseScenePointer);
+    canvas.addEventListener("pointercancel", releaseScenePointer);
+    canvas.addEventListener("lostpointercapture", releaseScenePointer);
 
     const resize = () => {
       const { height, width } = container.getBoundingClientRect();
@@ -1119,9 +1296,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       canvas.removeEventListener("dblclick", onDoubleClick);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", clearHoveredImageLayer);
-      canvas.removeEventListener("pointerup", releaseImagePointer);
-      canvas.removeEventListener("pointercancel", releaseImagePointer);
-      canvas.removeEventListener("lostpointercapture", releaseImagePointer);
+      canvas.removeEventListener("pointerup", releaseScenePointer);
+      canvas.removeEventListener("pointercancel", releaseScenePointer);
+      canvas.removeEventListener("lostpointercapture", releaseScenePointer);
       resizeObserver.disconnect();
       imageTextureRecords.forEach((record) => record.texture.dispose());
       imageTextureRecords.clear();

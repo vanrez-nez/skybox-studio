@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { Ellipsis, Eye, EyeOff, Focus, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
+import { CircleDot, Ellipsis, Eye, EyeOff, Focus, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -57,6 +57,10 @@ function getLayerIcon(type: EffectLayerType) {
 
   if (type === "field-gradient") {
     return Sparkles;
+  }
+
+  if (type === "spot") {
+    return CircleDot;
   }
 
   return ImagePlus;
@@ -511,6 +515,10 @@ export function LayersWidget() {
                 <DropdownMenuItem onSelect={() => addEffectLayer("field-gradient")}>
                   <Sparkles />
                   Field Gradient
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => addEffectLayer("spot")}>
+                  <CircleDot />
+                  Spot
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => addEffectLayer("image")}>
                   <ImagePlus />

@@ -21,6 +21,7 @@ import {
   type Point2Value,
   type PointInputChangeOptions,
 } from "@/components/ui/point-input";
+import { RotationField } from "@/components/ui/rotation-field";
 import { Widget } from "@/components/widgets/Widget";
 import {
   createImageAssetId,
@@ -30,8 +31,10 @@ import { cn } from "@/lib/utils";
 import {
   IMAGE_PLACEMENT_ELEVATION_LIMIT,
   placementFromPosition,
+  placementFromRotation,
   placementFromScale,
   positionFromPlacement,
+  rotationFromPlacement,
   scaleFromPlacement,
 } from "@/runtime/image-placement-transform";
 import { useWorkspaceStore } from "@/store/app";
@@ -368,6 +371,23 @@ export function ImageWidget() {
     );
   };
 
+  const updatePlacementRotation = (
+    rotation: number,
+    options?: { history?: "checkpoint" | "skip" }
+  ) => {
+    const latestImagePlacement = getLatestImagePlacement();
+
+    if (!latestImagePlacement) {
+      return;
+    }
+
+    setImagePlacement(
+      latestImagePlacement.layerId,
+      placementFromRotation(latestImagePlacement.placement, rotation),
+      options
+    );
+  };
+
   useEffect(() => {
     setPan((currentPan) => clampPan(currentPan));
   }, [previewImageHeight, previewImageWidth]);
@@ -488,6 +508,20 @@ export function ImageWidget() {
             onValueChange={updatePlacementScale}
             step={0.1}
             value={scaleFromPlacement(image.placement)}
+          />
+          <RotationField
+            ariaLabel="Image rotation"
+            className="widget-point-group-wide"
+            inputAriaLabel="Image rotation"
+            label="Rotation"
+            layout="stacked"
+            onBlur={() => commitHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE)}
+            onFocus={() => beginHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE)}
+            onInteractionEnd={() => commitHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE)}
+            onInteractionStart={() => beginHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE)}
+            onValueChange={updatePlacementRotation}
+            sizeMode="fluid"
+            value={rotationFromPlacement(image.placement)}
           />
         </div>
       ) : null}

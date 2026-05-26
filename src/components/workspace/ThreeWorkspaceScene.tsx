@@ -293,6 +293,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       hasMoved: false,
       offsetX: 0,
       offsetY: 0,
+      rotation: 0,
       layerId: "",
       placement: null as ImagePlacement | null,
       pointerId: -1,
@@ -856,6 +857,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         baseAngularHeight: imageDragState.baseAngularHeight,
         baseAngularWidth: imageDragState.baseAngularWidth,
         centerDirection: pointerDirection,
+        rotation: imageDragState.rotation,
       });
       const centerDirection = normalizeVector([
         pointerDirection[0] -
@@ -875,6 +877,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         baseAngularHeight: imageDragState.baseAngularHeight,
         baseAngularWidth: imageDragState.baseAngularWidth,
         centerDirection,
+        rotation: imageDragState.rotation,
       });
 
       imageDragState.placement = placement;
@@ -903,6 +906,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       imageDragState.angularHeight = 0;
       imageDragState.baseAngularWidth = 0;
       imageDragState.baseAngularHeight = 0;
+      imageDragState.rotation = 0;
       imageDragState.hasMoved = false;
       imageDragState.offsetX = 0;
       imageDragState.offsetY = 0;
@@ -948,6 +952,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       imageDragState.angularHeight = placement.angularHeight;
       imageDragState.baseAngularWidth = placement.baseAngularWidth;
       imageDragState.baseAngularHeight = placement.baseAngularHeight;
+      imageDragState.rotation = placement.rotation ?? 0;
       imageDragState.hasMoved = false;
       imageDragState.offsetX = hit.uv ? (hit.uv.u - 0.5) * halfWidth * 2 : 0;
       imageDragState.offsetY = hit.uv ? (0.5 - hit.uv.v) * halfHeight * 2 : 0;

@@ -9,9 +9,8 @@ import {
 import { Trash2 } from "lucide-react";
 
 import { FloatingColorPicker } from "@/components/gradient/FloatingColorPicker";
-import { RotationKnob } from "@/components/gradient/RotationKnob";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { RotationField } from "@/components/ui/rotation-field";
 import {
   Select,
   SelectContent,
@@ -43,12 +42,6 @@ function gradientStopToCss(stop: GradientStop) {
 
 function getGradientBackground(stops: GradientStop[]) {
   return `linear-gradient(90deg, ${sortStops(stops).map(gradientStopToCss).join(", ")})`;
-}
-
-function parseNumericInput(value: string) {
-  const parsedValue = Number.parseFloat(value.replace("%", "").trim());
-
-  return Number.isFinite(parsedValue) ? parsedValue : 0;
 }
 
 function clampPercent(value: number) {
@@ -296,38 +289,17 @@ export function GradientWidget() {
           </Select>
         </div>
 
-        <div className="widget-field widget-field-rotation">
-          <span className="text-xs">Rotation</span>
-          <RotationKnob
-            onChange={(rotation) => setGradientRotation(rotation, { history: "skip" })}
-            onChangeEnd={commitHistoryTransaction}
-            onChangeStart={beginHistoryTransaction}
-            value={gradient.rotation}
-          />
-          <div className="relative w-12 overflow-visible">
-            <Input
-              aria-label="Gradient rotation"
-              className="h-7 w-full overflow-visible bg-background pr-2 text-xs"
-              inputMode="numeric"
-              onBlur={() => commitHistoryTransaction()}
-              onChange={(event) =>
-                setGradientRotation(parseNumericInput(event.target.value), { history: "skip" })
-              }
-              onFocus={() => beginHistoryTransaction()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-              }}
-              type="text"
-              value={gradient.rotation}
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute right-[8px] top-[7px] size-1.25 rounded-full border border-muted-foreground"
-            />
-          </div>
-        </div>
+        <RotationField
+          ariaLabel="Gradient rotation"
+          inputAriaLabel="Gradient rotation"
+          label="Rotation"
+          onBlur={() => commitHistoryTransaction()}
+          onFocus={() => beginHistoryTransaction()}
+          onInteractionEnd={commitHistoryTransaction}
+          onInteractionStart={beginHistoryTransaction}
+          onValueChange={setGradientRotation}
+          value={gradient.rotation}
+        />
       </div>
 
       <div>

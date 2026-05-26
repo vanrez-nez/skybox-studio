@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Link2, Link2Off } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,8 @@ export type Point2InputProps = Omit<PointInputBaseProps<Point2Value, PointAxis2>
 export type Point3InputProps = Omit<PointInputBaseProps<Point3Value, PointAxis3>, "axes">;
 
 const AXIS_ORDER: PointAxis[] = ["x", "y", "z"];
+const POINT_2_AXES: PointAxis2[] = ["x", "y"];
+const POINT_3_AXES: PointAxis3[] = ["x", "y", "z"];
 const DEFAULT_AXIS_LABELS: Record<PointAxis, string> = {
   x: "X",
   y: "Y",
@@ -241,7 +243,7 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
   fields,
   formatValue,
   label,
-  layout = "inline",
+  layout = "vertical",
   lockedPairs,
   locks,
   max,
@@ -296,6 +298,7 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
 
     return axisFormatValue ? axisFormatValue(axisValue) : `${axisValue}`;
   };
+  const formatAxisSummaryLabel = (axis: TAxis) => getAxisLabel(axis).toUpperCase();
 
   const emitOptionalLockChange = (nextOptionalLockKeys: Set<string>) => {
     const nextOptionalPairs = sortPairs(
@@ -380,23 +383,27 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
       <Button
         aria-label={`${isLocked ? "Unlock" : "Lock"} ${getPairKey(lock.pair)}`}
         aria-pressed={isLocked}
+        className="size-4 rounded-sm bg-card p-0 hover:bg-card!"
         disabled={disabled || isFixed}
         key={lockKey}
         onClick={() => toggleLock(lock)}
         size="icon-xs"
         type="button"
-        variant={isLocked ? "secondary" : "outline"}
+        variant="ghost"
       >
         <Icon />
       </Button>
     );
   };
 
-  const renderAxisField = (axis: TAxis) => (
-    <div className="flex min-w-0 items-center gap-2" key={axis}>
-      <span className="text-xs text-muted-foreground">{getAxisLabel(axis)}</span>
+  const renderAxisField = (axis: TAxis, className?: string, sizeMode: "fixed" | "fluid" = "fixed") => (
+    <div className={cn("flex min-w-0 items-center gap-2", className)} key={axis}>
+      <span className="w-4 shrink-0 text-right text-[10px] uppercase text-muted-foreground/70">
+        {getAxisLabel(axis)}
+      </span>
       <NumericDragInput
         ariaLabel={`${label} ${getAxisLabel(axis)}`}
+        className="min-w-0 flex-1"
         disabled={disabled || isAxisReadOnly(axis)}
         dragPixelsPerStep={getAxisDragPixelsPerStep(axis)}
         formatValue={getAxisFormatValue(axis)}
@@ -408,54 +415,120 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
         onInteractionStart={onInteractionStart}
         onValueChange={(nextAxisValue, options) => updateAxisValue(axis, nextAxisValue, options)}
         parseValue={getAxisParseValue(axis)}
+        sizeMode={sizeMode}
         step={getAxisStep(axis)}
         value={value[axis] ?? 0}
       />
     </div>
   );
 
+  const getAdjacentLock = (axis: TAxis, nextAxis: TAxis | undefined) => {
+    if (!nextAxis) {
+      return undefined;
+    }
+
+    return configuredLocks.find((lock) => {
+      const pair = normalizePair(lock.pair);
+
+      return pair[0] === axis && pair[1] === nextAxis;
+    });
+  };
+
   const renderInlineControls = () => (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {axes.map((axis, axisIndex) => {
-        const nextAxis = axes[axisIndex + 1];
-        const lockAfterAxis = configuredLocks.find((lock) => {
-          const pair = normalizePair(lock.pair);
+    (() => {
+      const nonAdjacentLocks = configuredLocks.filter((lock) => {
+        const pair = normalizePair(lock.pair);
 
-          return pair[0] === axis && pair[1] === nextAxis;
-        });
+        return Math.abs(getAxisIndex(pair[0]) - getAxisIndex(pair[1])) > 1;
+      });
+      const baseColumns = axes.length === 2
+        ? "minmax(0, 1fr) 3rem minmax(0, 1fr)"
+        : "minmax(0, 1fr) 3rem minmax(0, 1fr) 3rem minmax(0, 1fr)";
+      return (
+        <div
+          className="grid min-w-0 flex-1 items-center gap-2"
+          style={{
+            gridTemplateColumns: nonAdjacentLocks.length > 0
+              ? `${baseColumns} auto`
+              : baseColumns,
+          }}
+        >
+          {axes.map((axis, axisIndex) => {
+            const nextAxis = axes[axisIndex + 1];
+            const lockAfterAxis = getAdjacentLock(axis, nextAxis);
 
-        return (
-          <div className="flex min-w-0 items-center gap-2" key={axis}>
-            {renderAxisField(axis)}
-            {lockAfterAxis ? renderLockButton(lockAfterAxis) : null}
-          </div>
-        );
-      })}
-      {configuredLocks
-        .filter((lock) => {
-          const pair = normalizePair(lock.pair);
-
-          return Math.abs(getAxisIndex(pair[0]) - getAxisIndex(pair[1])) > 1;
-        })
-        .map(renderLockButton)}
-    </div>
+            return (
+              <Fragment key={axis}>
+                {renderAxisField(axis, undefined, "fluid")}
+                {axisIndex < axes.length - 1 ? (
+                  <div className="flex h-6 min-w-0 items-center justify-end">
+                    {lockAfterAxis ? renderLockButton(lockAfterAxis) : null}
+                  </div>
+                ) : null}
+              </Fragment>
+            );
+          })}
+          {nonAdjacentLocks.length > 0 ? (
+            <div className="flex shrink-0 items-center gap-1">
+              {nonAdjacentLocks.map(renderLockButton)}
+            </div>
+          ) : null}
+        </div>
+      );
+    })()
   );
 
   const renderVerticalControls = () => (
-    <div className="flex flex-col gap-2">
-      {axes.map((axis) => {
-        const axisLocks = configuredLocks.filter((lock) => hasPairAxis(normalizePair(lock.pair), axis));
+    <div
+      className="grid min-w-0 gap-x-2 gap-y-2"
+      style={{
+        gridTemplateColumns: "minmax(0, 1fr) 2rem",
+        gridTemplateRows: `repeat(${axes.length}, 1.75rem)`,
+      }}
+    >
+      {axes.map((axis, axisIndex) => (
+        <div
+          className="min-w-0"
+          key={axis}
+          style={{ gridColumn: 1, gridRow: axisIndex + 1 }}
+        >
+          {renderAxisField(axis, "h-7 justify-start", "fluid")}
+        </div>
+      ))}
+
+      {configuredLocks.map((lock) => {
+        const [firstAxis, secondAxis] = normalizePair(lock.pair);
+        const startIndex = axes.indexOf(firstAxis as TAxis);
+        const endIndex = axes.indexOf(secondAxis as TAxis);
+
+        if (startIndex === -1 || endIndex === -1) {
+          return null;
+        }
+
+        const startRow = Math.min(startIndex, endIndex) + 1;
+        const endRow = Math.max(startIndex, endIndex) + 2;
 
         return (
-          <div className="flex min-w-0 items-center gap-2" key={axis}>
-            {renderAxisField(axis)}
-            {axisLocks.map((lock) => {
-              const otherAxis = getPairOtherAxis(normalizePair(lock.pair), axis);
-
-              return otherAxis && getAxisIndex(axis) < getAxisIndex(otherAxis)
-                ? renderLockButton(lock)
-                : null;
-            })}
+          <div
+            className="relative flex min-w-0 items-center justify-center"
+            key={getPairKey(lock.pair)}
+            style={{ gridColumn: 2, gridRow: `${startRow} / ${endRow}` }}
+          >
+            <span
+              aria-hidden="true"
+              className="absolute top-[0.875rem] left-0 h-px w-2 bg-border"
+            />
+            <span
+              aria-hidden="true"
+              className="absolute top-[0.875rem] bottom-[0.875rem] left-2 w-px bg-border"
+            />
+            <span
+              aria-hidden="true"
+              className="absolute bottom-[0.875rem] left-0 h-px w-2 bg-border"
+            />
+            <div className="relative -ml-4 flex items-center justify-center">
+              {renderLockButton(lock)}
+            </div>
           </div>
         );
       })}
@@ -463,7 +536,7 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
   );
 
   const summary = axes
-    .map((axis) => `${getAxisLabel(axis)}: ${formatAxisValue(axis, value[axis] ?? 0)}`)
+    .map((axis) => `${formatAxisSummaryLabel(axis)}: ${formatAxisValue(axis, value[axis] ?? 0)}`)
     .join(", ");
 
   if (layout === "vertical") {
@@ -495,17 +568,22 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
   }
 
   return (
-    <div className={cn("flex min-w-0 flex-wrap items-center gap-3", className)}>
-      <span className="shrink-0 text-xs">{label}</span>
+    <div
+      className={cn(
+        "grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-3",
+        className
+      )}
+    >
+      <span className="text-xs">{label}</span>
       {renderInlineControls()}
     </div>
   );
 }
 
 export function Point2Input(props: Point2InputProps) {
-  return <PointInputBase {...props} axes={["x", "y"]} />;
+  return <PointInputBase {...props} axes={POINT_2_AXES} />;
 }
 
 export function Point3Input(props: Point3InputProps) {
-  return <PointInputBase {...props} axes={["x", "y", "z"]} />;
+  return <PointInputBase {...props} axes={POINT_3_AXES} />;
 }

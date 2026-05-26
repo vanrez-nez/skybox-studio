@@ -274,6 +274,17 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
+.widget-point-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (max-width: 299px) {
+  .widget-point-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
 @container (max-width: 349px) {
   .widget-inline-fields {
     align-items: stretch;

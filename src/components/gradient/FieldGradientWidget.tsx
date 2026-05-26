@@ -458,7 +458,11 @@ export function FieldGradientWidget() {
             onValueChange={(value) => setFieldGradientMode(value as FieldGradientMode)}
             value={fieldGradient.mode}
           >
-            <SelectTrigger aria-label="Field gradient mode" className="h-8 w-full bg-background text-xs">
+            <SelectTrigger
+              aria-label="Field gradient mode"
+              className="w-full bg-background text-xs"
+              size="xs"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

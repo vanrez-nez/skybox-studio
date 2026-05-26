@@ -30,6 +30,7 @@ type NumericDragInputProps = {
   onInteractionStart?: () => void;
   onValueChange: (value: number, options?: NumericDragInputChangeOptions) => void;
   parseValue?: (value: string) => number | null;
+  sizeMode?: "fixed" | "fluid";
   step?: number;
   value: number;
 };
@@ -101,6 +102,7 @@ export function NumericDragInput({
   onInteractionStart,
   onValueChange,
   parseValue = defaultParseValue,
+  sizeMode = "fixed",
   step = 1,
   value,
 }: NumericDragInputProps) {
@@ -240,7 +242,7 @@ export function NumericDragInput({
     <div className={cn("flex min-w-0 items-center", className)}>
       <Button
         aria-label={`Decrement ${ariaLabel}`}
-        className="h-8 rounded-r-none border-r-0"
+        className="h-7 w-5 rounded-r-none border-r-0 px-0"
         disabled={disabled}
         onClick={() => updateValueByStep(-1)}
         size="icon-xs"
@@ -253,7 +255,8 @@ export function NumericDragInput({
         ref={inputRef}
         aria-label={ariaLabel}
         className={cn(
-          "h-8 w-16 cursor-ew-resize rounded-none bg-background px-2 text-center font-mono text-xs",
+          "h-7 cursor-ew-resize rounded-none bg-background px-2 text-center font-mono text-xs",
+          sizeMode === "fixed" ? "w-16" : "min-w-0 flex-1",
           isEditing && "cursor-text",
           inputClassName
         )}
@@ -272,7 +275,7 @@ export function NumericDragInput({
       />
       <Button
         aria-label={`Increment ${ariaLabel}`}
-        className="h-8 rounded-l-none border-l-0"
+        className="h-7 w-5 rounded-l-none border-l-0 px-0"
         disabled={disabled}
         onClick={() => updateValueByStep(1)}
         size="icon-xs"

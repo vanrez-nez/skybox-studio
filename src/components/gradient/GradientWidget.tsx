@@ -281,7 +281,11 @@ export function GradientWidget() {
         <div className="widget-field widget-field-mode">
           <span className="text-xs">Mode</span>
           <Select onValueChange={(value) => setGradientMode(value as GradientMode)} value={gradient.mode}>
-            <SelectTrigger aria-label="Gradient mode" className="h-8 w-full bg-background text-xs">
+            <SelectTrigger
+              aria-label="Gradient mode"
+              className="w-full bg-background text-xs"
+              size="xs"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -303,7 +307,7 @@ export function GradientWidget() {
           <div className="relative w-12 overflow-visible">
             <Input
               aria-label="Gradient rotation"
-              className="h-8 w-full overflow-visible bg-background pr-2 text-xs"
+              className="h-7 w-full overflow-visible bg-background pr-2 text-xs"
               inputMode="numeric"
               onBlur={commitHistoryTransaction}
               onChange={(event) =>
@@ -320,7 +324,7 @@ export function GradientWidget() {
             />
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute right-[8px] top-[8px] size-1.25 rounded-full border border-muted-foreground"
+              className="pointer-events-none absolute right-[8px] top-[7px] size-1.25 rounded-full border border-muted-foreground"
             />
           </div>
         </div>

@@ -130,14 +130,14 @@ export function FloatingColorPicker({
     <>
       <Button
         aria-label="Select gradient stop color"
+        className="size-7 overflow-hidden p-0"
         onClick={togglePicker}
-        size="icon-sm"
         type="button"
         variant="outline"
       >
         <span
           aria-hidden="true"
-          className="size-4 rounded-sm border"
+          className="size-full rounded-[inherit]"
           style={{ backgroundColor: value }}
         />
       </Button>

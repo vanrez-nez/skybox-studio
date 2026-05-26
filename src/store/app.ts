@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { StateCreator } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import type { PersistStorage, StorageValue } from "zustand/middleware";
 
 import {
   createLayersSlice,
@@ -49,6 +50,34 @@ type PersistedWorkspacePreferences = Pick<
   | "showSkyGeometry"
 >;
 
+let isStorageHistoryTransactionActive = false;
+
+function beginStorageHistoryTransaction() {
+  isStorageHistoryTransactionActive = true;
+}
+
+function endStorageHistoryTransaction() {
+  isStorageHistoryTransactionActive = false;
+}
+
+function createTransactionAwareSessionStorage<T>(): PersistStorage<T> {
+  return {
+    getItem: (name) => {
+      const value = sessionStorage.getItem(name);
+
+      return value ? (JSON.parse(value) as StorageValue<T>) : null;
+    },
+    removeItem: (name) => sessionStorage.removeItem(name),
+    setItem: (name, value) => {
+      if (isStorageHistoryTransactionActive) {
+        return;
+      }
+
+      sessionStorage.setItem(name, JSON.stringify(value));
+    },
+  };
+}
+
 function captureHistorySnapshot(
   participants: Array<HistoryParticipant<WorkspaceStore>>,
   state: WorkspaceStore
@@ -89,13 +118,22 @@ function createHistorySlice(
           return state;
         }
 
+        beginStorageHistoryTransaction();
+
         return {
           activeHistorySnapshot: captureHistorySnapshot(participants, state),
         };
       }),
-    cancelHistoryTransaction: () => set({ activeHistorySnapshot: null }),
+    cancelHistoryTransaction: () =>
+      set(() => {
+        endStorageHistoryTransaction();
+
+        return { activeHistorySnapshot: null };
+      }),
     commitHistoryTransaction: () =>
       set((state) => {
+        endStorageHistoryTransaction();
+
         const transactionSnapshot = state.activeHistorySnapshot;
 
         if (!transactionSnapshot) {
@@ -116,18 +154,24 @@ function createHistorySlice(
           historyPast: [...state.historyPast, transactionSnapshot],
         };
       }),
-    createHistoryCheckpoint: (state) => ({
-      activeHistorySnapshot: null,
-      historyFuture: [],
-      historyPast: [
-        ...state.historyPast,
-        state.activeHistorySnapshot ?? captureHistorySnapshot(participants, state),
-      ],
-    }),
+    createHistoryCheckpoint: (state) => {
+      endStorageHistoryTransaction();
+
+      return {
+        activeHistorySnapshot: null,
+        historyFuture: [],
+        historyPast: [
+          ...state.historyPast,
+          state.activeHistorySnapshot ?? captureHistorySnapshot(participants, state),
+        ],
+      };
+    },
     historyFuture: [],
     historyPast: [],
     redoHistory: () =>
       set((state) => {
+        endStorageHistoryTransaction();
+
         const next = state.historyFuture[0];
 
         if (!next) {
@@ -143,6 +187,8 @@ function createHistorySlice(
       }),
     undoHistory: () =>
       set((state) => {
+        endStorageHistoryTransaction();
+
         const previous = state.historyPast[state.historyPast.length - 1];
 
         if (!previous) {
@@ -185,7 +231,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         showOrientationGizmo: state.showOrientationGizmo,
         showSkyGeometry: state.showSkyGeometry,
       }),
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createTransactionAwareSessionStorage<PersistedWorkspacePreferences>(),
       version: 2,
     }
   )

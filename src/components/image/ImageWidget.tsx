@@ -14,15 +14,29 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Point2Input,
+  type LockConfig,
+  type Point2Value,
+  type PointInputChangeOptions,
+} from "@/components/ui/point-input";
 import { Widget } from "@/components/widgets/Widget";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
-import type { ImageState } from "@/store/modules/layers";
+import type { ImagePlacement, ImageState } from "@/store/modules/layers";
 
 const DIALOG_PREVIEW_HEIGHT = 400;
 const DIALOG_PREVIEW_WIDTH = 600;
 const TRANSPARENT_PLACEHOLDER_ACTION_CLASS =
   "bg-secondary text-secondary-foreground shadow-sm hover:bg-card!";
+const SCALE_LOCKS: LockConfig[] = [
+  { pair: ["x", "y"], optional: true, defaultLocked: true },
+];
+const POSITION_ELEVATION_LIMIT = 89.9;
+const SCALE_MIN_DEGREES = 0.1;
+const SCALE_MAX_DEGREES = 179;
+
+type VectorTuple = [number, number, number];
 
 function formatBytes(bytes: number) {
   if (bytes <= 0) {
@@ -86,6 +100,120 @@ function clampPanOffset(value: number, imageSize: number, viewportSize: number) 
   return Math.min(maxOffset, Math.max(-maxOffset, value));
 }
 
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function radiansToDegrees(radians: number) {
+  return (radians * 180) / Math.PI;
+}
+
+function degreesToRadians(degrees: number) {
+  return (degrees * Math.PI) / 180;
+}
+
+function normalizeAngleDegrees(degrees: number) {
+  return ((degrees + 180) % 360 + 360) % 360 - 180;
+}
+
+function normalizeVector(vector: VectorTuple, fallback: VectorTuple): VectorTuple {
+  const length = Math.hypot(vector[0], vector[1], vector[2]);
+
+  if (length <= 0.000001) {
+    return fallback;
+  }
+
+  return [vector[0] / length, vector[1] / length, vector[2] / length];
+}
+
+function dotVector(firstVector: VectorTuple, secondVector: VectorTuple) {
+  return (
+    firstVector[0] * secondVector[0] +
+    firstVector[1] * secondVector[1] +
+    firstVector[2] * secondVector[2]
+  );
+}
+
+function subtractVector(firstVector: VectorTuple, secondVector: VectorTuple): VectorTuple {
+  return [
+    firstVector[0] - secondVector[0],
+    firstVector[1] - secondVector[1],
+    firstVector[2] - secondVector[2],
+  ];
+}
+
+function multiplyVector(vector: VectorTuple, scalar: number): VectorTuple {
+  return [vector[0] * scalar, vector[1] * scalar, vector[2] * scalar];
+}
+
+function crossVector(firstVector: VectorTuple, secondVector: VectorTuple): VectorTuple {
+  return [
+    firstVector[1] * secondVector[2] - firstVector[2] * secondVector[1],
+    firstVector[2] * secondVector[0] - firstVector[0] * secondVector[2],
+    firstVector[0] * secondVector[1] - firstVector[1] * secondVector[0],
+  ];
+}
+
+function getPlacementTangents(centerDirection: VectorTuple) {
+  const normalizedCenterDirection = normalizeVector(centerDirection, [0, 0, -1]);
+  let tangentY = subtractVector(
+    [0, 1, 0],
+    multiplyVector([0, 1, 0], dotVector([0, 1, 0], normalizedCenterDirection))
+  );
+
+  if (Math.hypot(tangentY[0], tangentY[1], tangentY[2]) < 0.000001) {
+    const fallbackUp: VectorTuple = Math.abs(normalizedCenterDirection[1]) > 0.98
+      ? [0, 0, 1]
+      : [0, 1, 0];
+
+    tangentY = subtractVector(
+      fallbackUp,
+      multiplyVector(normalizedCenterDirection, dotVector(fallbackUp, normalizedCenterDirection))
+    );
+  }
+
+  tangentY = normalizeVector(tangentY, [0, 1, 0]);
+
+  return {
+    tangentX: normalizeVector(crossVector(normalizedCenterDirection, tangentY), [1, 0, 0]),
+    tangentY,
+  };
+}
+
+function positionFromPlacement(placement: ImagePlacement): Point2Value {
+  const centerDirection = normalizeVector(placement.centerDirection, [0, 0, -1]);
+
+  return {
+    x: normalizeAngleDegrees(radiansToDegrees(Math.atan2(centerDirection[0], -centerDirection[2]))),
+    y: radiansToDegrees(Math.asin(clampValue(centerDirection[1], -1, 1))),
+  };
+}
+
+function directionFromPosition(position: Point2Value): VectorTuple {
+  const yaw = degreesToRadians(position.x);
+  const elevation = degreesToRadians(clampValue(position.y, -POSITION_ELEVATION_LIMIT, POSITION_ELEVATION_LIMIT));
+  const cosElevation = Math.cos(elevation);
+
+  return normalizeVector([
+    Math.sin(yaw) * cosElevation,
+    Math.sin(elevation),
+    -Math.cos(yaw) * cosElevation,
+  ], [0, 0, -1]);
+}
+
+function scaleFromPlacement(placement: ImagePlacement): Point2Value {
+  return {
+    x: radiansToDegrees(placement.angularWidth),
+    y: radiansToDegrees(placement.angularHeight),
+  };
+}
+
+function formatDegreeValue(value: number) {
+  const roundedValue = Number(value.toFixed(1));
+
+  return Number.isInteger(roundedValue) ? roundedValue.toFixed(0) : `${roundedValue}`;
+}
+
 export function ImageWidget() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panDragRef = useRef<{
@@ -101,8 +229,12 @@ export function ImageWidget() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const image = useWorkspaceStore((state) => state.image);
+  const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const clearImage = useWorkspaceStore((state) => state.clearImage);
+  const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
+  const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const setImage = useWorkspaceStore((state) => state.setImage);
+  const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
   const hasImage = Boolean(image.src);
 
   const loadImageFile = async (file: File | null | undefined) => {
@@ -219,6 +351,43 @@ export function ImageWidget() {
     x: clampPanOffset(nextPan.x, previewImageWidth, DIALOG_PREVIEW_WIDTH),
     y: clampPanOffset(nextPan.y, previewImageHeight, DIALOG_PREVIEW_HEIGHT),
   });
+  const canEditPlacement = Boolean(hasImage && image.placement && selectedLayerId);
+
+  const updatePlacementPosition = (position: Point2Value, options?: PointInputChangeOptions) => {
+    if (!image.placement || !selectedLayerId) {
+      return;
+    }
+
+    const centerDirection = directionFromPosition(position);
+    const { tangentX, tangentY } = getPlacementTangents(centerDirection);
+
+    setImagePlacement(
+      selectedLayerId,
+      {
+        ...image.placement,
+        centerDirection,
+        tangentX,
+        tangentY,
+      },
+      options
+    );
+  };
+
+  const updatePlacementScale = (scale: Point2Value, options?: PointInputChangeOptions) => {
+    if (!image.placement || !selectedLayerId) {
+      return;
+    }
+
+    setImagePlacement(
+      selectedLayerId,
+      {
+        ...image.placement,
+        angularHeight: degreesToRadians(clampValue(scale.y, SCALE_MIN_DEGREES, SCALE_MAX_DEGREES)),
+        angularWidth: degreesToRadians(clampValue(scale.x, SCALE_MIN_DEGREES, SCALE_MAX_DEGREES)),
+      },
+      options
+    );
+  };
 
   useEffect(() => {
     setPan((currentPan) => clampPan(currentPan));
@@ -298,6 +467,45 @@ export function ImageWidget() {
           </button>
         )}
       </div>
+
+      {canEditPlacement && image.placement ? (
+        <div className="widget-point-groups">
+          <Point2Input
+            fields={{
+              x: { label: "X", min: -180, max: 180, step: 1 },
+              y: { label: "Y", min: -POSITION_ELEVATION_LIMIT, max: POSITION_ELEVATION_LIMIT, step: 1 },
+            }}
+            formatValue={formatDegreeValue}
+            label="Position"
+            layout="vertical"
+            onBlur={commitHistoryTransaction}
+            onFocus={beginHistoryTransaction}
+            onInteractionEnd={commitHistoryTransaction}
+            onInteractionStart={beginHistoryTransaction}
+            onValueChange={updatePlacementPosition}
+            value={positionFromPlacement(image.placement)}
+          />
+          <Point2Input
+            fields={{
+              x: { label: "X" },
+              y: { label: "Y" },
+            }}
+            formatValue={formatDegreeValue}
+            label="Scale"
+            layout="vertical"
+            locks={SCALE_LOCKS}
+            max={SCALE_MAX_DEGREES}
+            min={SCALE_MIN_DEGREES}
+            onBlur={commitHistoryTransaction}
+            onFocus={beginHistoryTransaction}
+            onInteractionEnd={commitHistoryTransaction}
+            onInteractionStart={beginHistoryTransaction}
+            onValueChange={updatePlacementScale}
+            step={0.1}
+            value={scaleFromPlacement(image.placement)}
+          />
+        </div>
+      ) : null}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="w-auto max-w-none gap-3 p-4 pt-12 sm:max-w-none">

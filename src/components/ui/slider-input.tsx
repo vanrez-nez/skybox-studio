@@ -179,7 +179,7 @@ export function SliderInput({
         <Button
           aria-expanded={isPanelOpen}
           aria-label={`Open ${ariaLabel} slider`}
-          className="h-7 rounded-l-none"
+          className="h-7 w-5 rounded-l-none px-0"
           data-slider-input-trigger={triggerId}
           disabled={disabled}
           onClick={togglePanel}

@@ -407,7 +407,8 @@ export function LayersWidget() {
           >
             <SelectTrigger
               aria-label="Layer blend mode"
-              className="h-7 w-28 bg-background text-xs"
+              className="w-28 bg-background text-xs"
+              size="xs"
             >
               <SelectValue />
             </SelectTrigger>

@@ -61,6 +61,11 @@ export type EffectLayer =
       type: "image";
     };
 
+export type EffectLayerFocusTarget = {
+  direction: [number, number, number];
+  type: "direction";
+};
+
 export type EffectLayerAdapter<TType extends EffectLayerType, TParams> = {
   getDefaultName: (index: number) => string;
   load: (serialized: { params: TParams; type: TType }) => TParams;
@@ -100,6 +105,36 @@ export function cloneImageState(image: ImageState): ImageState {
     pixels: image.pixels ? [...image.pixels] : null,
     placement: cloneImagePlacement(image.placement),
     src: image.src ?? null,
+  };
+}
+
+function isFiniteDirection(direction: [number, number, number]) {
+  return direction.every(Number.isFinite) && direction.some((component) => component !== 0);
+}
+
+export function getEffectLayerFocusTarget(
+  layer: EffectLayer | undefined
+): EffectLayerFocusTarget | null {
+  if (
+    !layer ||
+    layer.type !== "image" ||
+    !layer.enabled ||
+    !layer.params.src ||
+    !layer.params.placement
+  ) {
+    return null;
+  }
+
+  const placement = normalizeImagePlacement(layer.params.placement);
+  const direction = placement.centerDirection;
+
+  if (!isFiniteDirection(direction)) {
+    return null;
+  }
+
+  return {
+    direction,
+    type: "direction",
   };
 }
 

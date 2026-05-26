@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { Ellipsis, Eye, EyeOff, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
+import { Ellipsis, Eye, EyeOff, Focus, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -40,7 +40,12 @@ import {
 import { SliderInput } from "@/components/ui/slider-input";
 import { Widget } from "@/components/widgets/Widget";
 import { BLEND_MODE_GROUPS } from "@/effects/blend-modes";
-import type { EffectLayer, EffectLayerBlendMode, EffectLayerType } from "@/effects/effect-layer";
+import {
+  getEffectLayerFocusTarget,
+  type EffectLayer,
+  type EffectLayerBlendMode,
+  type EffectLayerType,
+} from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
 
@@ -289,6 +294,7 @@ export function LayersWidget() {
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const deleteEffectLayer = useWorkspaceStore((state) => state.deleteEffectLayer);
   const deleteSelectedEffectLayer = useWorkspaceStore((state) => state.deleteSelectedEffectLayer);
+  const emitLayerFocusRequest = useWorkspaceStore((state) => state.emitLayerFocusRequest);
   const effectLayers = useWorkspaceStore((state) => state.effectLayers);
   const reorderEffectLayer = useWorkspaceStore((state) => state.reorderEffectLayer);
   const renameEffectLayer = useWorkspaceStore((state) => state.renameEffectLayer);
@@ -302,6 +308,7 @@ export function LayersWidget() {
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const canDeleteLayer = effectLayers.length > 0 && Boolean(selectedLayerId);
   const selectedLayer = effectLayers.find((layer) => layer.id === selectedLayerId);
+  const selectedLayerFocusTarget = getEffectLayerFocusTarget(selectedLayer);
 
   useEffect(() => {
     if (!editingLayerId) {
@@ -483,34 +490,50 @@ export function LayersWidget() {
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-1 border-t pt-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              aria-label="Add layer"
-              size="icon-sm"
-              type="button"
-              variant="ghost"
-            >
-              <Ellipsis />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={() => addEffectLayer("gradient")}>
-                <Palette />
-                Gradient
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => addEffectLayer("field-gradient")}>
-                <Sparkles />
-                Field Gradient
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => addEffectLayer("image")}>
-                <ImagePlus />
-                Image
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                aria-label="Add layer"
+                size="icon-sm"
+                type="button"
+                variant="ghost"
+              >
+                <Ellipsis />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={() => addEffectLayer("gradient")}>
+                  <Palette />
+                  Gradient
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => addEffectLayer("field-gradient")}>
+                  <Sparkles />
+                  Field Gradient
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => addEffectLayer("image")}>
+                  <ImagePlus />
+                  Image
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            aria-label="Focus selected layer"
+            disabled={!selectedLayer || !selectedLayerFocusTarget}
+            onClick={() => {
+              if (selectedLayer?.id && selectedLayerFocusTarget) {
+                emitLayerFocusRequest(selectedLayer.id);
+              }
+            }}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            <Focus />
+          </Button>
+        </div>
         <Button
           aria-label="Delete selected layer"
           className="hover:bg-card! hover:text-destructive"

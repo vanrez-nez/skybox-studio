@@ -24,6 +24,7 @@ import {
   type SceneRenderMode,
   type SkyGeometryType,
 } from "@/store/modules/scene";
+import { getEffectLayerFocusTarget } from "@/effects/effect-layer";
 
 type AppMenuItem = {
   disabled?: boolean;
@@ -90,6 +91,7 @@ export function AppMenu() {
   const canUndo = useWorkspaceStore((state) => state.historyPast.length > 0);
   const canRedo = useWorkspaceStore((state) => state.historyFuture.length > 0);
   const cameraRotationMode = useWorkspaceStore((state) => state.cameraRotationMode);
+  const effectLayers = useWorkspaceStore((state) => state.effectLayers);
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
@@ -103,15 +105,19 @@ export function AppMenu() {
   const setShowOrientationGizmo = useWorkspaceStore((state) => state.setShowOrientationGizmo);
   const setShowSkyGeometry = useWorkspaceStore((state) => state.setShowSkyGeometry);
   const deleteSelectedEffectLayer = useWorkspaceStore((state) => state.deleteSelectedEffectLayer);
+  const emitLayerFocusRequest = useWorkspaceStore((state) => state.emitLayerFocusRequest);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const undoRef = useRef(undoHistory);
   const redoRef = useRef(redoHistory);
   const deleteSelectedEffectLayerRef = useRef(deleteSelectedEffectLayer);
+  const emitLayerFocusRequestRef = useRef(emitLayerFocusRequest);
   const selectedLayerIdRef = useRef(selectedLayerId);
   const toggleEffectLayerEnabledRef = useRef(toggleEffectLayerEnabled);
   const modifierKeyLabel = getModifierKeyLabel();
   const deleteShortcutKey = getDeleteShortcutKey();
   const deleteShortcutLabel = getDeleteShortcutLabel();
+  const selectedLayer = effectLayers.find((layer) => layer.id === selectedLayerId);
+  const canFocusSelectedLayer = Boolean(getEffectLayerFocusTarget(selectedLayer));
   const editMenuItems: AppMenuItem[] = [
     {
       disabled: !canUndo,
@@ -128,10 +134,16 @@ export function AppMenu() {
   ];
   const layerMenuItems: AppMenuItem[] = [
     {
+      disabled: !canFocusSelectedLayer,
+      id: "layer.focus",
+      label: "Focus",
+      shortcut: [modifierKeyLabel, "F"],
+    },
+    {
       disabled: !selectedLayerId,
       id: "layer.toggle-visibility",
       label: "Toggle Visibility",
-      shortcut: ["H"],
+      shortcut: [modifierKeyLabel, "H"],
     },
     {
       disabled: !selectedLayerId,
@@ -152,6 +164,10 @@ export function AppMenu() {
   useEffect(() => {
     deleteSelectedEffectLayerRef.current = deleteSelectedEffectLayer;
   }, [deleteSelectedEffectLayer]);
+
+  useEffect(() => {
+    emitLayerFocusRequestRef.current = emitLayerFocusRequest;
+  }, [emitLayerFocusRequest]);
 
   useEffect(() => {
     selectedLayerIdRef.current = selectedLayerId;
@@ -188,7 +204,7 @@ export function AppMenu() {
       }
     );
     const toggleVisibilityHandle = hotkeys.register(
-      "H",
+      "Mod+H",
       () => {
         const layerId = selectedLayerIdRef.current;
 
@@ -199,6 +215,25 @@ export function AppMenu() {
       {
         ignoreInputs: true,
         meta: { name: "Toggle Layer Visibility" },
+        preventDefault: true,
+        stopPropagation: true,
+      }
+    );
+    const focusLayerHandle = hotkeys.register(
+      "Mod+F",
+      () => {
+        const state = useWorkspaceStore.getState();
+        const layer = state.effectLayers.find(
+          (effectLayer) => effectLayer.id === state.selectedLayerId
+        );
+
+        if (layer && getEffectLayerFocusTarget(layer)) {
+          emitLayerFocusRequestRef.current(layer.id);
+        }
+      },
+      {
+        ignoreInputs: true,
+        meta: { name: "Focus Layer" },
         preventDefault: true,
         stopPropagation: true,
       }
@@ -222,6 +257,7 @@ export function AppMenu() {
       undoHandle.unregister();
       redoHandle.unregister();
       toggleVisibilityHandle.unregister();
+      focusLayerHandle.unregister();
       deleteHandle.unregister();
     };
   }, [deleteShortcutKey]);
@@ -240,6 +276,13 @@ export function AppMenu() {
     if (id === "layer.toggle-visibility") {
       if (selectedLayerId) {
         toggleEffectLayerEnabled(selectedLayerId);
+      }
+      return;
+    }
+
+    if (id === "layer.focus") {
+      if (selectedLayerId && canFocusSelectedLayer) {
+        emitLayerFocusRequest(selectedLayerId);
       }
       return;
     }

@@ -8,6 +8,7 @@ export type MenuCommandId =
   | "file.export"
   | "file.load"
   | "layer.delete"
+  | "layer.focus"
   | "layer.toggle-visibility";
 export type MenuEventId = MenuId | MenuCommandId;
 export type CameraRotationMode = "drag" | "scroll";
@@ -19,15 +20,22 @@ export type MenuEvent = {
   issuedAt: number;
 };
 
+export type LayerFocusRequest = {
+  issuedAt: number;
+  layerId: string;
+};
+
 export type SceneSlice = {
   activeView: WorkspaceView;
   cameraRotationMode: CameraRotationMode;
+  lastLayerFocusRequest: LayerFocusRequest | null;
   lastMenuEvent: MenuEvent | null;
   sceneRenderMode: SceneRenderMode;
   skyGeometryType: SkyGeometryType;
   showGroundPlaneHelper: boolean;
   showOrientationGizmo: boolean;
   showSkyGeometry: boolean;
+  emitLayerFocusRequest: (layerId: string) => void;
   emitMenuEvent: (id: MenuEventId) => void;
   setActiveView: (view: WorkspaceView) => void;
   setCameraRotationMode: (mode: CameraRotationMode) => void;
@@ -51,12 +59,15 @@ export const createSceneSlice: StateCreator<
 > = (set) => ({
   activeView: "editor",
   cameraRotationMode: "drag",
+  lastLayerFocusRequest: null,
   lastMenuEvent: null,
   sceneRenderMode: "live",
   skyGeometryType: "box",
   showGroundPlaneHelper: false,
   showOrientationGizmo: true,
   showSkyGeometry: false,
+  emitLayerFocusRequest: (layerId) =>
+    set({ lastLayerFocusRequest: { issuedAt: Date.now(), layerId } }),
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
   setActiveView: (view) => set({ activeView: view }),
   setCameraRotationMode: (mode) => set({ cameraRotationMode: mode }),

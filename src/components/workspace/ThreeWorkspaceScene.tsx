@@ -10,7 +10,7 @@ import type {
 } from "@/store/modules/scene";
 import { RotationGizmo } from "@/components/workspace/RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
-import type { EffectLayer } from "@/effects/effect-layer";
+import { getEffectLayerFocusTarget, type EffectLayer } from "@/effects/effect-layer";
 import {
   createAngularDecalPlacement,
   createSkyboxWireGeometry,
@@ -151,6 +151,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     ((nextManifest: SkyboxManifest, nextRenderMode: SceneRenderMode) => void) | null
   >(null);
   const lookAtAxisDirectionRef = useRef<((direction: VectorTuple) => void) | null>(null);
+  const focusLayerRef = useRef<((layerId: string) => void) | null>(null);
   const resetOrientationRef = useRef<(() => void) | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const [gizmoOrientation, setGizmoOrientation] = useState<QuaternionTuple>(() =>
@@ -167,6 +168,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const setImageAssetSource = useWorkspaceStore((state) => state.setImageAssetSource);
   const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
+  const lastLayerFocusRequest = useWorkspaceStore((state) => state.lastLayerFocusRequest);
   const previewEffectLayerBlendMode = useWorkspaceStore(
     (state) => state.previewEffectLayerBlendMode
   );
@@ -218,6 +220,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   useEffect(() => {
     setCameraRotationModeRef.current?.(cameraRotationMode);
   }, [cameraRotationMode]);
+
+  useEffect(() => {
+    if (!lastLayerFocusRequest) {
+      return;
+    }
+
+    focusLayerRef.current?.(lastLayerFocusRequest.layerId);
+  }, [lastLayerFocusRequest?.layerId, lastLayerFocusRequest?.issuedAt]);
 
   useEffect(() => {
     setSkyGeometryVisibleRef.current?.(showSkyGeometry);
@@ -683,6 +693,20 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       canvas.style.cursor = "grab";
     };
 
+    const getDirectionQuaternion = (direction: VectorTuple) => {
+      const targetDirection = new THREE.Vector3(...direction).normalize();
+      const fallbackUp = Math.abs(targetDirection.y) > 0.98
+        ? new THREE.Vector3(0, 0, targetDirection.y > 0 ? -1 : 1)
+        : new THREE.Vector3(0, 1, 0);
+      const targetCamera = camera.clone();
+
+      targetCamera.position.set(0, 0, 0);
+      targetCamera.up.copy(fallbackUp);
+      targetCamera.lookAt(targetDirection);
+
+      return targetCamera.quaternion;
+    };
+
     const getAxisQuaternion = (direction: VectorTuple) => {
       const requestedDirection = new THREE.Vector3(...direction).normalize();
       const currentForwardDirection = new THREE.Vector3(0, 0, -1)
@@ -692,16 +716,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         currentForwardDirection.dot(requestedDirection) > AXIS_TOGGLE_DOT_THRESHOLD
           ? requestedDirection.negate()
           : requestedDirection;
-      const fallbackUp = Math.abs(axisDirection.y) > 0.98
-        ? new THREE.Vector3(0, 0, axisDirection.y > 0 ? -1 : 1)
-        : new THREE.Vector3(0, 1, 0);
-      const targetCamera = camera.clone();
 
-      targetCamera.position.set(0, 0, 0);
-      targetCamera.up.copy(fallbackUp);
-      targetCamera.lookAt(axisDirection);
-
-      return targetCamera.quaternion;
+      return getDirectionQuaternion(vectorToTuple(axisDirection));
     };
 
     const lookAtAxisDirection = (direction: VectorTuple) => {
@@ -759,6 +775,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     const resetOrientation = () => {
       animateToQuaternion(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION));
+    };
+
+    const focusLayer = (layerId: string) => {
+      const layer = effectLayersRef.current.find((effectLayer) => effectLayer.id === layerId);
+      const focusTarget = getEffectLayerFocusTarget(layer);
+
+      if (!focusTarget || focusTarget.type !== "direction") {
+        return;
+      }
+
+      animateToQuaternion(getDirectionQuaternion(focusTarget.direction));
     };
 
     const setRaycasterFromPointer = (event: MouseEvent) => {
@@ -886,6 +913,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     lookAtAxisDirectionRef.current = lookAtAxisDirection;
+    focusLayerRef.current = focusLayer;
     resetOrientationRef.current = resetOrientation;
     syncGizmoOrientation();
 
@@ -1079,6 +1107,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       syncEditorImageStateRef.current = null;
       updateSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
+      focusLayerRef.current = null;
       resetOrientationRef.current = null;
       cancelCameraAnimation();
       if (pendingImagePlacementFrame !== null) {

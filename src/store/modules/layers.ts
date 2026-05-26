@@ -290,12 +290,80 @@ function captureLayersHistorySnapshot(state: LayersSlice): LayersHistorySnapshot
   };
 }
 
-function restoreLayersHistorySnapshot(snapshot: LayersHistorySnapshot) {
+function createRuntimeImageLookup(state: LayersSlice) {
+  const byAssetId = new Map<string, ImageState>();
+  const byLayerId = new Map<string, ImageState>();
+
+  state.effectLayers.forEach((layer) => {
+    if (layer.type !== "image" || !layer.params.assetId) {
+      return;
+    }
+
+    if (!layer.params.src && !layer.params.pixels) {
+      return;
+    }
+
+    byLayerId.set(layer.id, layer.params);
+    byAssetId.set(layer.params.assetId, layer.params);
+  });
+
+  return { byAssetId, byLayerId };
+}
+
+function rehydrateImageRuntimeData(
+  image: ImageState,
+  runtimeImage: ImageState | undefined
+): ImageState {
+  if (!runtimeImage || !image.assetId || runtimeImage.assetId !== image.assetId) {
+    return image;
+  }
+
   return {
-    effectLayers: snapshot.effectLayers.map(cloneEffectLayerForHistory),
+    ...image,
+    pixels: runtimeImage.pixels ? [...runtimeImage.pixels] : image.pixels,
+    src: runtimeImage.src ?? image.src,
+  };
+}
+
+function restoreImageLayerRuntimeData(
+  layer: EffectLayer,
+  runtimeLookup: ReturnType<typeof createRuntimeImageLookup>
+): EffectLayer {
+  if (layer.type !== "image" || !layer.params.assetId) {
+    return layer;
+  }
+
+  const runtimeImage =
+    runtimeLookup.byLayerId.get(layer.id) ?? runtimeLookup.byAssetId.get(layer.params.assetId);
+
+  return {
+    ...layer,
+    params: rehydrateImageRuntimeData(layer.params, runtimeImage),
+  };
+}
+
+function restoreLayersHistorySnapshot(
+  snapshot: LayersHistorySnapshot,
+  currentState: LayersSlice
+) {
+  const runtimeLookup = createRuntimeImageLookup(currentState);
+  const effectLayers = snapshot.effectLayers
+    .map(cloneEffectLayerForHistory)
+    .map((layer) => restoreImageLayerRuntimeData(layer, runtimeLookup));
+  const selectedLayer = effectLayers.find((layer) => layer.id === snapshot.selectedLayerId);
+  const image =
+    selectedLayer?.type === "image"
+      ? cloneImageState(selectedLayer.params)
+      : rehydrateImageRuntimeData(
+          cloneImageStateForHistory(snapshot.image),
+          snapshot.image.assetId ? runtimeLookup.byAssetId.get(snapshot.image.assetId) : undefined
+        );
+
+  return {
+    effectLayers,
     fieldGradient: cloneFieldGradientState(snapshot.fieldGradient),
     gradient: cloneGradientState(snapshot.gradient),
-    image: cloneImageStateForHistory(snapshot.image),
+    image,
     selectedLayerId: snapshot.selectedLayerId,
   };
 }
@@ -394,7 +462,8 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
 export const layersHistoryParticipant: HistoryParticipant<WorkspaceStore> = {
   capture: (state) => captureLayersHistorySnapshot(state),
   id: "layers",
-  restore: (snapshot) => restoreLayersHistorySnapshot(snapshot as LayersHistorySnapshot),
+  restore: (snapshot, currentState) =>
+    restoreLayersHistorySnapshot(snapshot as LayersHistorySnapshot, currentState),
 };
 
 export const createLayersSlice: StateCreator<

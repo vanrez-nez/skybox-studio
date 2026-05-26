@@ -16,7 +16,7 @@ export type HistorySnapshot = Record<string, unknown>;
 export type HistoryParticipant<TStore> = {
   capture: (state: TStore) => unknown;
   id: string;
-  restore: (snapshot: unknown) => Partial<TStore>;
+  restore: (snapshot: unknown, currentState: TStore) => Partial<TStore>;
 };
 
 export type HistoryTransaction = {
@@ -141,7 +141,8 @@ function captureHistorySnapshot(
 
 function restoreHistorySnapshot(
   participants: Array<HistoryParticipant<WorkspaceStore>>,
-  snapshot: HistorySnapshot
+  snapshot: HistorySnapshot,
+  currentState: WorkspaceStore
 ) {
   return participants.reduce<Partial<WorkspaceStore>>((restorePatch, participant) => {
     if (!(participant.id in snapshot)) {
@@ -150,7 +151,7 @@ function restoreHistorySnapshot(
 
     return {
       ...restorePatch,
-      ...participant.restore(snapshot[participant.id]),
+      ...participant.restore(snapshot[participant.id], currentState),
     };
   }, {});
 }
@@ -255,7 +256,7 @@ function createHistorySlice(
         }
 
         return {
-          ...restoreHistorySnapshot(participants, next),
+          ...restoreHistorySnapshot(participants, next, state),
           activeHistoryTransaction: null,
           historyFuture: state.historyFuture.slice(1),
           historyPast: pushHistorySnapshot(
@@ -275,7 +276,7 @@ function createHistorySlice(
         }
 
         return {
-          ...restoreHistorySnapshot(participants, previous),
+          ...restoreHistorySnapshot(participants, previous, state),
           activeHistoryTransaction: null,
           historyFuture: unshiftHistorySnapshot(
             state.historyFuture,

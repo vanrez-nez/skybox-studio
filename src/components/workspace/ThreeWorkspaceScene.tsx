@@ -40,15 +40,6 @@ function easeOutCubic(progress: number) {
   return 1 - (1 - progress) ** 3;
 }
 
-function createGroundPlaneHelperGeometry() {
-  const planeGeometry = new THREE.PlaneGeometry(1.8, 1.8, 8, 8);
-  const wireGeometry = new THREE.WireframeGeometry(planeGeometry);
-
-  planeGeometry.dispose();
-
-  return wireGeometry;
-}
-
 function vectorToTuple(vector: THREE.Vector3): VectorTuple {
   return [vector.x, vector.y, vector.z];
 }
@@ -263,17 +254,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         transparent: true,
       })
     );
-    const groundPlaneHelper = new THREE.LineSegments(
-      createGroundPlaneHelperGeometry(),
-      new THREE.LineBasicMaterial({
-        color: 0x22c55e,
-        depthTest: false,
-        depthWrite: false,
-        opacity: 0.45,
-        toneMapped: false,
-        transparent: true,
-      })
-    );
+    const groundPlaneHelper = new THREE.GridHelper(1.8, 32, 0x22c55e, 0x22c55e);
+    const groundPlaneHelperMaterials = Array.isArray(groundPlaneHelper.material)
+      ? groundPlaneHelper.material
+      : [groundPlaneHelper.material];
     const raycaster = new THREE.Raycaster();
     const imageDragState = {
       angularHeight: 0,
@@ -298,9 +282,15 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     skyGeometry.renderOrder = 10;
     skyGeometry.visible = showSkyGeometry;
     groundPlaneHelper.position.set(0, -0.1, 0);
-    groundPlaneHelper.rotation.x = -Math.PI / 2;
     groundPlaneHelper.renderOrder = 9;
     groundPlaneHelper.visible = showGroundPlaneHelper;
+    groundPlaneHelperMaterials.forEach((material) => {
+      material.depthTest = false;
+      material.depthWrite = false;
+      material.opacity = 0.45;
+      material.toneMapped = false;
+      material.transparent = true;
+    });
     scene.add(skyGeometry);
     scene.add(groundPlaneHelper);
 
@@ -978,7 +968,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       imageAssetUrlRecords.clear();
       liveSkybox.dispose();
       groundPlaneHelper.geometry.dispose();
-      groundPlaneHelper.material.dispose();
+      groundPlaneHelperMaterials.forEach((material) => material.dispose());
       skyGeometry.geometry.dispose();
       skyGeometry.material.dispose();
       renderer.dispose();

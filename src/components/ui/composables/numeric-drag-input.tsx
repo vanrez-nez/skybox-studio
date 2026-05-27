@@ -35,6 +35,11 @@ type NumericDragInputProps = {
   value: number;
 };
 
+type NumericDragFieldProps = NumericDragInputProps & {
+  fieldLabel: string;
+  label: string;
+};
+
 type ActiveDrag = {
   hasDragged: boolean;
   interactionStarted: boolean;
@@ -226,7 +231,7 @@ export function NumericDragInput({
   };
 
   return (
-    <div className={cn("flex min-w-0 items-center", className)}>
+    <div className={cn("flex min-w-0 items-center", sizeMode === "fluid" && "w-full", className)}>
       <Button
         aria-label={`Decrement ${ariaLabel}`}
         className="h-7 w-5 rounded-r-none border-r-0 px-0"
@@ -271,6 +276,32 @@ export function NumericDragInput({
       >
         <ChevronRight />
       </Button>
+    </div>
+  );
+}
+
+export function NumericDragField({
+  className,
+  fieldLabel,
+  label,
+  sizeMode = "fluid",
+  ...props
+}: NumericDragFieldProps) {
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 text-xs">{label}</span>
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="w-4 shrink-0 text-right text-[10px] uppercase text-muted-foreground/70">
+          {fieldLabel}
+        </span>
+        <NumericDragInput
+          {...props}
+          className="min-w-0 flex-1"
+          sizeMode={sizeMode}
+        />
+      </div>
     </div>
   );
 }

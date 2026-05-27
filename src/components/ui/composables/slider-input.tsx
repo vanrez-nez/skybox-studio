@@ -35,6 +35,7 @@ type SliderInputProps = {
   onValueChange: (value: number, options?: SliderInputHistoryOptions) => void;
   panelClassName?: string;
   parseValue?: (value: string) => number | null;
+  sizeMode?: "fixed" | "fluid";
   sliderAriaLabel: string;
   step?: number;
   value: number;
@@ -83,6 +84,7 @@ export function SliderInput({
   onValueChange,
   panelClassName,
   parseValue = defaultParseValue,
+  sizeMode = "fixed",
   sliderAriaLabel,
   step = 1,
   value,
@@ -160,11 +162,12 @@ export function SliderInput({
 
   return (
     <>
-      <div className={cn("flex min-w-0 items-center", className)}>
+      <div className={cn("flex min-w-0 items-center", sizeMode === "fluid" && "w-full", className)}>
         <Input
           aria-label={ariaLabel}
           className={cn(
-            "h-7 w-16 rounded-r-none border-r-0 bg-background px-2 font-mono text-xs",
+            "h-7 rounded-r-none border-r-0 bg-background px-2 font-mono text-xs",
+            sizeMode === "fixed" ? "w-16" : "min-w-0 flex-1",
             inputClassName
           )}
           disabled={disabled}

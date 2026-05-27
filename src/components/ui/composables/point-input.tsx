@@ -475,62 +475,68 @@ function PointInputBase<TValue extends PointValue, TAxis extends PointAxis>({
     })()
   );
 
-  const renderVerticalControls = () => (
-    <div
-      className="grid min-w-0 gap-x-2 gap-y-2"
-      style={{
-        gridTemplateColumns: "minmax(0, 1fr) 2rem",
-        gridTemplateRows: `repeat(${axes.length}, 1.75rem)`,
-      }}
-    >
-      {axes.map((axis, axisIndex) => (
-        <div
-          className="min-w-0"
-          key={axis}
-          style={{ gridColumn: 1, gridRow: axisIndex + 1 }}
-        >
-          {renderAxisField(axis, "h-7 justify-start", "fluid")}
-        </div>
-      ))}
+  const renderVerticalControls = () => {
+    const hasLocks = configuredLocks.length > 0;
 
-      {configuredLocks.map((lock) => {
-        const [firstAxis, secondAxis] = normalizePair(lock.pair);
-        const startIndex = axes.indexOf(firstAxis as TAxis);
-        const endIndex = axes.indexOf(secondAxis as TAxis);
-
-        if (startIndex === -1 || endIndex === -1) {
-          return null;
-        }
-
-        const startRow = Math.min(startIndex, endIndex) + 1;
-        const endRow = Math.max(startIndex, endIndex) + 2;
-
-        return (
+    return (
+      <div
+        className="grid min-w-0 gap-x-2 gap-y-2"
+        style={{
+          gridTemplateColumns: hasLocks ? "minmax(0, 1fr) 2rem" : "minmax(0, 1fr)",
+          gridTemplateRows: `repeat(${axes.length}, 1.75rem)`,
+        }}
+      >
+        {axes.map((axis, axisIndex) => (
           <div
-            className="relative flex min-w-0 items-center justify-center"
-            key={getPairKey(lock.pair)}
-            style={{ gridColumn: 2, gridRow: `${startRow} / ${endRow}` }}
+            className="min-w-0"
+            key={axis}
+            style={{ gridColumn: 1, gridRow: axisIndex + 1 }}
           >
-            <span
-              aria-hidden="true"
-              className="absolute top-[0.875rem] left-0 h-px w-2 bg-border"
-            />
-            <span
-              aria-hidden="true"
-              className="absolute top-[0.875rem] bottom-[0.875rem] left-2 w-px bg-border"
-            />
-            <span
-              aria-hidden="true"
-              className="absolute bottom-[0.875rem] left-0 h-px w-2 bg-border"
-            />
-            <div className="relative -ml-4 flex items-center justify-center">
-              {renderLockButton(lock)}
-            </div>
+            {renderAxisField(axis, "h-7 justify-start", "fluid")}
           </div>
-        );
-      })}
-    </div>
-  );
+        ))}
+
+        {hasLocks
+          ? configuredLocks.map((lock) => {
+              const [firstAxis, secondAxis] = normalizePair(lock.pair);
+              const startIndex = axes.indexOf(firstAxis as TAxis);
+              const endIndex = axes.indexOf(secondAxis as TAxis);
+
+              if (startIndex === -1 || endIndex === -1) {
+                return null;
+              }
+
+              const startRow = Math.min(startIndex, endIndex) + 1;
+              const endRow = Math.max(startIndex, endIndex) + 2;
+
+              return (
+                <div
+                  className="relative flex min-w-0 items-center justify-center"
+                  key={getPairKey(lock.pair)}
+                  style={{ gridColumn: 2, gridRow: `${startRow} / ${endRow}` }}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-[0.875rem] left-0 h-px w-2 bg-border"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-[0.875rem] bottom-[0.875rem] left-2 w-px bg-border"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-[0.875rem] left-0 h-px w-2 bg-border"
+                  />
+                  <div className="relative -ml-4 flex items-center justify-center">
+                    {renderLockButton(lock)}
+                  </div>
+                </div>
+              );
+            })
+          : null}
+      </div>
+    );
+  };
 
   const summary = axes
     .map((axis) => `${formatAxisSummaryLabel(axis)}: ${formatAxisValue(axis, value[axis] ?? 0)}`)

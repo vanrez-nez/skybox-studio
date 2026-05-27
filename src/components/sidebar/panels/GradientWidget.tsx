@@ -528,6 +528,7 @@ export function GradientWidget() {
             onValueChange={(value, options) =>
               updateSelectedStopPercent("location", value, options)
             }
+            sizeMode="fluid"
             sliderAriaLabel="Gradient stop location slider"
             value={selectedStop.location}
           />
@@ -550,6 +551,7 @@ export function GradientWidget() {
             onValueChange={(value, options) =>
               updateSelectedStopPercent("opacity", value, options)
             }
+            sizeMode="fluid"
             sliderAriaLabel="Gradient stop opacity slider"
             value={selectedStop.opacity}
           />

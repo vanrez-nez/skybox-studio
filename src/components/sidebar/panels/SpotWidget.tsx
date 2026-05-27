@@ -10,7 +10,7 @@ import { Trash2 } from "lucide-react";
 
 import { FloatingColorPicker } from "@/components/ui/composables/FloatingColorPicker";
 import { Button } from "@/components/ui/primitives/button";
-import { NumericDragInput } from "@/components/ui/composables/numeric-drag-input";
+import { NumericDragField } from "@/components/ui/composables/numeric-drag-input";
 import { Point2Input, type Point2Value, type PointInputChangeOptions } from "@/components/ui/composables/point-input";
 import {
   Select,
@@ -539,32 +539,25 @@ export function SpotWidget() {
           onValueChange={updatePosition}
           value={positionFromSpot(spot)}
         />
-        <div className="widget-point-group">
-          <span className="text-xs font-medium">Radius</span>
-          <div className="grid gap-2">
-            <div className="grid grid-cols-[0.75rem_minmax(0,1fr)] items-center gap-2">
-              <span className="text-[0.625rem] text-muted-foreground uppercase">R</span>
-              <NumericDragInput
-                ariaLabel="Spot radius"
-                formatValue={formatUnitValue}
-                min={0.01}
-                onBlur={commitHistoryTransaction}
-                onFocus={beginHistoryTransaction}
-                onInteractionEnd={commitHistoryTransaction}
-                onInteractionStart={beginHistoryTransaction}
-                onValueChange={setSpotRadiusScale}
-                sizeMode="fluid"
-                step={0.1}
-                value={radiusScaleFromSpot(spot)}
-              />
-            </div>
-          </div>
-        </div>
+        <NumericDragField
+          ariaLabel="Spot radius"
+          fieldLabel="R"
+          formatValue={formatUnitValue}
+          label="Radius"
+          min={0.01}
+          onBlur={commitHistoryTransaction}
+          onFocus={beginHistoryTransaction}
+          onInteractionEnd={commitHistoryTransaction}
+          onInteractionStart={beginHistoryTransaction}
+          onValueChange={setSpotRadiusScale}
+          step={0.1}
+          value={radiusScaleFromSpot(spot)}
+        />
       </div>
 
       <div className="widget-inline-fields">
         <div className="widget-field widget-field-mode">
-          <span className="text-xs">Color Mode</span>
+          <span className="text-xs">Mode</span>
           <Select onValueChange={(value) => setSpotColorMode(value as SpotColorMode)} value={spot.colorMode}>
             <SelectTrigger
               aria-label="Spot color mode"
@@ -684,6 +677,7 @@ export function SpotWidget() {
                 onValueChange={(value, options) =>
                   updateSelectedStopPercent("location", value, options)
                 }
+                sizeMode="fluid"
                 sliderAriaLabel="Spot stop location slider"
                 value={selectedStop.location}
               />
@@ -706,6 +700,7 @@ export function SpotWidget() {
                 onValueChange={(value, options) =>
                   updateSelectedStopPercent("opacity", value, options)
                 }
+                sizeMode="fluid"
                 sliderAriaLabel="Spot stop opacity slider"
                 value={selectedStop.opacity}
               />

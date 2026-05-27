@@ -269,7 +269,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
+  column-gap: 0.75rem;
+  row-gap: 0.75rem;
 }
 
 .widget-field {
@@ -304,7 +305,7 @@
 
 .widget-field-rotation-stacked .widget-field-rotation-controls {
   display: grid;
-  grid-template-columns: 1rem minmax(0, 1fr) 2rem;
+  grid-template-columns: 1rem minmax(0, 1fr);
 }
 
 .widget-field-color {
@@ -315,11 +316,12 @@
 .widget-field-number {
   min-width: 6rem;
   flex: 1 1 6rem;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
 .widget-point-groups {
   display: grid;
+  gap: 0.75rem 1rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 

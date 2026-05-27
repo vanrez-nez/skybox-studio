@@ -10,6 +10,7 @@ import { Trash2 } from "lucide-react";
 
 import { FloatingColorPicker } from "@/components/ui/composables/FloatingColorPicker";
 import { Button } from "@/components/ui/primitives/button";
+import { FieldGroup } from "@/components/ui/primitives/field-group";
 import { NumericDragField } from "@/components/ui/composables/numeric-drag-input";
 import { Point2Input, type Point2Value, type PointInputChangeOptions } from "@/components/ui/composables/point-input";
 import {
@@ -720,18 +721,21 @@ export function SpotWidget() {
               />
             </div>
           </div>
-          <div className="grid gap-4">
+          <div className="grid gap-1">
             {SPOT_LIGHT_CONTROLS.map((group) => (
-              <div className="grid gap-2" key={group.label}>
-                <span className="text-[0.625rem] font-medium text-muted-foreground uppercase">
-                  {group.label}
-                </span>
+              <FieldGroup
+                collapsible
+                contentClassName="grid gap-2"
+                indent
+                key={group.label}
+                label={group.label}
+              >
                 {group.controls.map((control) => (
                   <div
                     className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2"
                     key={control.key}
                   >
-                    <span className="text-xs">{control.label}</span>
+                    <span className="text-xs text-muted-foreground/70">{control.label}</span>
                     <SliderInput
                       ariaLabel={`Spot ${control.label.toLowerCase()}`}
                       formatValue={formatUnitValue}
@@ -750,7 +754,7 @@ export function SpotWidget() {
                     />
                   </div>
                 ))}
-              </div>
+              </FieldGroup>
             ))}
           </div>
         </>

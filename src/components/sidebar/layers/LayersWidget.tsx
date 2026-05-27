@@ -423,7 +423,12 @@ export function LayersWidget() {
     <Widget title="Layers" contentClassName="flex min-h-32 flex-col gap-2">
       <div className="flex items-center justify-between gap-2 border-b pb-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Blend className="shrink-0" />
+          <span
+            aria-hidden="true"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md [&_svg:not([class*='size-'])]:size-4"
+          >
+            <Blend />
+          </span>
           <Select
             disabled={!selectedLayer}
             onOpenChange={(isOpen) => {
@@ -493,7 +498,7 @@ export function LayersWidget() {
           }}
           size="icon-sm"
           type="button"
-          variant="ghost"
+          variant="secondary"
         >
           {selectedLayer?.locked ? <Lock /> : <LockOpen />}
         </Button>

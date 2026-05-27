@@ -107,12 +107,13 @@ export function FieldGroup({
           isCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
         )}
       >
-        <div className="min-h-0 overflow-hidden">
+        <div className={cn("min-h-0", isCollapsed ? "overflow-hidden" : "overflow-visible")}>
           {shouldRenderContent ? (
             <div
               className={cn(
                 "transition-opacity ease-out",
                 indent && collapsible && "pl-8",
+                !isCollapsed && "pb-2",
                 isContentOpaque
                   ? "opacity-100 duration-150"
                   : "pointer-events-none opacity-0 duration-100",

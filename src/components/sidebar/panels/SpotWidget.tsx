@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/primitives/select";
+import { Slider } from "@/components/ui/primitives/slider";
 import { SliderInput } from "@/components/ui/composables/slider-input";
 import { Widget } from "./Widget";
 import { cn } from "@/lib/utils";
@@ -39,47 +40,58 @@ import type {
 } from "@/store/modules/layers";
 
 type SpotLightControl = {
-  key: SpotLightParameterKey;
   label: string;
   max: number;
   min: number;
+  parameterKey: SpotLightParameterKey;
   step: number;
+};
+
+type SpotLightSliderProps = SpotLightControl & {
+  onInteractionEnd: () => void;
+  onInteractionStart: () => void;
+  onValueChange: (
+    parameterKey: SpotLightParameterKey,
+    value: number,
+    options?: { history?: "checkpoint" | "skip" }
+  ) => void;
+  value: number;
 };
 
 const SPOT_LIGHT_CONTROLS: Array<{ controls: SpotLightControl[]; label: string }> = [
   {
     label: "Core and glare",
     controls: [
-      { key: "brightness", label: "Brightness", min: 0, max: 4, step: 0.01 },
-      { key: "coreRadius", label: "Core radius", min: 0.01, max: 0.7, step: 0.001 },
-      { key: "coreSoftness", label: "Core softness", min: 0.4, max: 6, step: 0.01 },
-      { key: "glareSize", label: "Glare size", min: 0.03, max: 1.1, step: 0.001 },
-      { key: "glareStrength", label: "Glare strength", min: 0, max: 1.4, step: 0.001 },
+      { parameterKey: "brightness", label: "Brightness", min: 0, max: 4, step: 0.01 },
+      { parameterKey: "coreRadius", label: "Core radius", min: 0.01, max: 0.7, step: 0.001 },
+      { parameterKey: "coreSoftness", label: "Core softness", min: 0.4, max: 6, step: 0.01 },
+      { parameterKey: "glareSize", label: "Glare size", min: 0.03, max: 1.1, step: 0.001 },
+      { parameterKey: "glareStrength", label: "Glare strength", min: 0, max: 1.4, step: 0.001 },
     ],
   },
   {
     label: "Glow",
     controls: [
-      { key: "glowSize", label: "Size", min: 0.05, max: 1.4, step: 0.001 },
-      { key: "glowStrength", label: "Strength", min: 0, max: 1, step: 0.001 },
+      { parameterKey: "glowSize", label: "Size", min: 0.05, max: 1.4, step: 0.001 },
+      { parameterKey: "glowStrength", label: "Strength", min: 0, max: 1, step: 0.001 },
     ],
   },
   {
     label: "Spectral halo",
     controls: [
-      { key: "haloRadius", label: "Radius", min: 0.04, max: 1, step: 0.001 },
-      { key: "haloInnerWidth", label: "Inner width", min: 0.003, max: 0.09, step: 0.001 },
-      { key: "haloOuterWidth", label: "Outer width", min: 0.01, max: 0.24, step: 0.001 },
-      { key: "haloStrength", label: "Strength", min: 0, max: 1.4, step: 0.001 },
-      { key: "dispersion", label: "Dispersion", min: 0, max: 1, step: 0.001 },
+      { parameterKey: "haloRadius", label: "Radius", min: 0.04, max: 1, step: 0.001 },
+      { parameterKey: "haloInnerWidth", label: "Inner width", min: 0.003, max: 0.09, step: 0.001 },
+      { parameterKey: "haloOuterWidth", label: "Outer width", min: 0.01, max: 0.24, step: 0.001 },
+      { parameterKey: "haloStrength", label: "Strength", min: 0, max: 1.4, step: 0.001 },
+      { parameterKey: "dispersion", label: "Dispersion", min: 0, max: 1, step: 0.001 },
     ],
   },
   {
     label: "Sun dogs",
     controls: [
-      { key: "dogStrength", label: "Strength", min: 0, max: 1.8, step: 0.001 },
-      { key: "dogSpread", label: "Spread", min: 0.015, max: 0.18, step: 0.001 },
-      { key: "dogStretch", label: "Tail", min: 0, max: 0.55, step: 0.001 },
+      { parameterKey: "dogStrength", label: "Strength", min: 0, max: 1.8, step: 0.001 },
+      { parameterKey: "dogSpread", label: "Spread", min: 0.015, max: 0.18, step: 0.001 },
+      { parameterKey: "dogStretch", label: "Tail", min: 0, max: 0.55, step: 0.001 },
     ],
   },
 ];
@@ -215,6 +227,64 @@ function formatUnitValue(value: number) {
   const roundedValue = Number(value.toFixed(2));
 
   return Number.isInteger(roundedValue) ? roundedValue.toFixed(0) : `${roundedValue}`;
+}
+
+function SpotLightSlider({
+  label,
+  max,
+  min,
+  onInteractionEnd,
+  onInteractionStart,
+  onValueChange,
+  parameterKey,
+  step,
+  value,
+}: SpotLightSliderProps) {
+  const isAdjustingRef = useRef(false);
+
+  const beginAdjustment = () => {
+    if (isAdjustingRef.current) {
+      return;
+    }
+
+    isAdjustingRef.current = true;
+    onInteractionStart();
+  };
+
+  const endAdjustment = () => {
+    if (!isAdjustingRef.current) {
+      return;
+    }
+
+    isAdjustingRef.current = false;
+    onInteractionEnd();
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground/70">{label}</span>
+        <span className="font-mono text-xs text-muted-foreground">{formatUnitValue(value)}</span>
+      </div>
+      <Slider
+        aria-label={`Spot ${label.toLowerCase()}`}
+        max={max}
+        min={min}
+        onBlur={endAdjustment}
+        onKeyDown={beginAdjustment}
+        onPointerCancel={endAdjustment}
+        onPointerDown={beginAdjustment}
+        onValueChange={(nextValue) =>
+          onValueChange(parameterKey, nextValue[0] ?? value, {
+            history: isAdjustingRef.current ? "skip" : "checkpoint",
+          })
+        }
+        onValueCommit={endAdjustment}
+        step={step}
+        value={[value]}
+      />
+    </div>
+  );
 }
 
 export function SpotWidget() {
@@ -731,28 +801,18 @@ export function SpotWidget() {
                 label={group.label}
               >
                 {group.controls.map((control) => (
-                  <div
-                    className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2"
-                    key={control.key}
-                  >
-                    <span className="text-xs text-muted-foreground/70">{control.label}</span>
-                    <SliderInput
-                      ariaLabel={`Spot ${control.label.toLowerCase()}`}
-                      formatValue={formatUnitValue}
-                      max={control.max}
-                      min={control.min}
-                      onBlur={commitHistoryTransaction}
-                      onFocus={beginHistoryTransaction}
-                      onInteractionEnd={commitHistoryTransaction}
-                      onInteractionStart={beginHistoryTransaction}
-                      onValueChange={(value, options) =>
-                        setSpotLightParameter(control.key, value, options)
-                      }
-                      sliderAriaLabel={`Spot ${control.label.toLowerCase()} slider`}
-                      step={control.step}
-                      value={spot[control.key]}
-                    />
-                  </div>
+                  <SpotLightSlider
+                    key={control.parameterKey}
+                    label={control.label}
+                    max={control.max}
+                    min={control.min}
+                    onInteractionEnd={commitHistoryTransaction}
+                    onInteractionStart={beginHistoryTransaction}
+                    onValueChange={setSpotLightParameter}
+                    parameterKey={control.parameterKey}
+                    step={control.step}
+                    value={spot[control.parameterKey]}
+                  />
                 ))}
               </FieldGroup>
             ))}

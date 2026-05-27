@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { CircleDot, Ellipsis, Eye, EyeOff, Focus, ImagePlus, Palette, Sparkles, Trash2 } from "lucide-react";
+import { CircleDot, Ellipsis, Eye, EyeOff, Focus, ImagePlus, Lock, LockOpen, Palette, Sparkles, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -91,6 +91,7 @@ type LayerRowProps = {
   onEditingNameChange: (name: string) => void;
   onRenameFromMenu: (layer: EffectLayer) => void;
   onSelect: (id: string) => void;
+  onSetLocked: (id: string, locked: boolean) => void;
   onStartRename: (layer: EffectLayer) => void;
   onToggleEnabled: (id: string) => void;
 };
@@ -108,6 +109,7 @@ function LayerRow({
   onEditingNameChange,
   onRenameFromMenu,
   onSelect,
+  onSetLocked,
   onStartRename,
   onToggleEnabled,
 }: LayerRowProps) {
@@ -250,6 +252,18 @@ function LayerRow({
             <span className="min-w-0 flex-1 truncate">{layer.name}</span>
           )}
           <Button
+            aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSetLocked(layer.id, !layer.locked);
+            }}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            {layer.locked ? <Lock /> : <LockOpen />}
+          </Button>
+          <Button
             aria-label={layer.enabled ? "Disable layer" : "Enable layer"}
             onClick={(event) => {
               event.stopPropagation();
@@ -272,6 +286,9 @@ function LayerRow({
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => onToggleEnabled(layer.id)}>
           {layer.enabled ? "Disable" : "Enable"}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => onSetLocked(layer.id, !layer.locked)}>
+          {layer.locked ? "Unlock" : "Lock"}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
@@ -309,6 +326,7 @@ export function LayersWidget() {
   const setPreviewEffectLayerBlendMode = useWorkspaceStore(
     (state) => state.setPreviewEffectLayerBlendMode
   );
+  const setEffectLayerLocked = useWorkspaceStore((state) => state.setEffectLayerLocked);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const canDeleteLayer = effectLayers.length > 0 && Boolean(selectedLayerId);
   const selectedLayer = effectLayers.find((layer) => layer.id === selectedLayerId);
@@ -487,6 +505,7 @@ export function LayersWidget() {
             onEditingNameChange={setEditingName}
             onRenameFromMenu={startRenamingLayerFromMenu}
             onSelect={selectEffectLayer}
+            onSetLocked={setEffectLayerLocked}
             onStartRename={startRenamingLayer}
             onToggleEnabled={toggleEffectLayerEnabled}
           />

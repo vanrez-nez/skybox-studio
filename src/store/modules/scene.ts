@@ -9,6 +9,8 @@ export type MenuCommandId =
   | "file.load"
   | "layer.delete"
   | "layer.focus"
+  | "layer.lock"
+  | "layer.unlock"
   | "layer.toggle-visibility";
 export type MenuEventId = MenuId | MenuCommandId;
 export type CameraRotationMode = "drag" | "scroll";

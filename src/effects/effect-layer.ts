@@ -38,6 +38,7 @@ export type SerializedEffectLayer = {
     | SerializedSpotEffect;
   enabled: boolean;
   id: string;
+  locked?: boolean;
   name: string;
   opacity?: number;
 };
@@ -47,6 +48,7 @@ export type EffectLayer =
       blendMode: EffectLayerBlendMode;
       enabled: boolean;
       id: string;
+      locked: boolean;
       name: string;
       opacity: number;
       params: GradientState;
@@ -56,6 +58,7 @@ export type EffectLayer =
       blendMode: EffectLayerBlendMode;
       enabled: boolean;
       id: string;
+      locked: boolean;
       name: string;
       opacity: number;
       params: FieldGradientState;
@@ -65,6 +68,7 @@ export type EffectLayer =
       blendMode: EffectLayerBlendMode;
       enabled: boolean;
       id: string;
+      locked: boolean;
       name: string;
       opacity: number;
       params: ImageState;
@@ -74,6 +78,7 @@ export type EffectLayer =
       blendMode: EffectLayerBlendMode;
       enabled: boolean;
       id: string;
+      locked: boolean;
       name: string;
       opacity: number;
       params: SpotState;
@@ -212,6 +217,7 @@ export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer 
             : spotLayerAdapter.serialize(layer.params),
     enabled: layer.enabled,
     id: layer.id,
+    locked: layer.locked,
     name: layer.name,
     opacity: layer.opacity,
   };
@@ -223,6 +229,7 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
       blendMode: normalizeBlendMode(serialized.blendMode),
       enabled: serialized.enabled,
       id: serialized.id,
+      locked: serialized.locked ?? false,
       name: serialized.name,
       opacity: serialized.opacity ?? 100,
       params: gradientLayerAdapter.load(serialized.effect),
@@ -235,6 +242,7 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
       blendMode: normalizeBlendMode(serialized.blendMode),
       enabled: serialized.enabled,
       id: serialized.id,
+      locked: serialized.locked ?? false,
       name: serialized.name,
       opacity: serialized.opacity ?? 100,
       params: fieldGradientLayerAdapter.load(serialized.effect),
@@ -247,6 +255,7 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
       blendMode: normalizeBlendMode(serialized.blendMode),
       enabled: serialized.enabled,
       id: serialized.id,
+      locked: serialized.locked ?? false,
       name: serialized.name,
       opacity: serialized.opacity ?? 100,
       params: imageLayerAdapter.load(serialized.effect),
@@ -258,6 +267,7 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
     blendMode: normalizeBlendMode(serialized.blendMode),
     enabled: serialized.enabled,
     id: serialized.id,
+    locked: serialized.locked ?? false,
     name: serialized.name,
     opacity: serialized.opacity ?? 100,
     params: spotLayerAdapter.load(serialized.effect),

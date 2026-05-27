@@ -867,7 +867,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       const hits: SceneLayerHit[] = [];
 
       for (const layer of effectLayersRef.current) {
-        if (!layer.enabled) {
+        if (!layer.enabled || layer.locked) {
           continue;
         }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { HotkeyManager } from "@tanstack/hotkeys";
 
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
@@ -30,6 +30,7 @@ type AppMenuItem = {
   disabled?: boolean;
   id: MenuCommandId;
   label: string;
+  separatorBefore?: boolean;
   shortcut?: string[];
 };
 
@@ -106,6 +107,7 @@ export function AppMenu() {
   const setShowSkyGeometry = useWorkspaceStore((state) => state.setShowSkyGeometry);
   const deleteSelectedEffectLayer = useWorkspaceStore((state) => state.deleteSelectedEffectLayer);
   const emitLayerFocusRequest = useWorkspaceStore((state) => state.emitLayerFocusRequest);
+  const setEffectLayerLocked = useWorkspaceStore((state) => state.setEffectLayerLocked);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const undoRef = useRef(undoHistory);
   const redoRef = useRef(redoHistory);
@@ -117,7 +119,9 @@ export function AppMenu() {
   const deleteShortcutKey = getDeleteShortcutKey();
   const deleteShortcutLabel = getDeleteShortcutLabel();
   const selectedLayer = effectLayers.find((layer) => layer.id === selectedLayerId);
+  const hasSelectedLayer = Boolean(selectedLayer);
   const canFocusSelectedLayer = Boolean(getEffectLayerFocusTarget(selectedLayer));
+  const isSelectedLayerLocked = Boolean(selectedLayer?.locked);
   const editMenuItems: AppMenuItem[] = [
     {
       disabled: !canUndo,
@@ -140,16 +144,27 @@ export function AppMenu() {
       shortcut: [modifierKeyLabel, "F"],
     },
     {
-      disabled: !selectedLayerId,
+      disabled: !hasSelectedLayer,
       id: "layer.toggle-visibility",
       label: "Toggle Visibility",
       shortcut: [modifierKeyLabel, "H"],
     },
     {
-      disabled: !selectedLayerId,
+      disabled: !hasSelectedLayer,
       id: "layer.delete",
       label: "Delete",
       shortcut: [deleteShortcutLabel],
+    },
+    {
+      disabled: !hasSelectedLayer || isSelectedLayerLocked,
+      id: "layer.lock",
+      label: "Lock",
+      separatorBefore: true,
+    },
+    {
+      disabled: !hasSelectedLayer || !isSelectedLayerLocked,
+      id: "layer.unlock",
+      label: "Unlock",
     },
   ];
 
@@ -280,6 +295,20 @@ export function AppMenu() {
       return;
     }
 
+    if (id === "layer.lock") {
+      if (selectedLayerId) {
+        setEffectLayerLocked(selectedLayerId, true);
+      }
+      return;
+    }
+
+    if (id === "layer.unlock") {
+      if (selectedLayerId) {
+        setEffectLayerLocked(selectedLayerId, false);
+      }
+      return;
+    }
+
     if (id === "layer.focus") {
       if (selectedLayerId && canFocusSelectedLayer) {
         emitLayerFocusRequest(selectedLayerId);
@@ -299,14 +328,16 @@ export function AppMenu() {
     return (
       <MenubarContent>
         {items.map((menuItem) => (
-          <MenubarItem
-            disabled={menuItem.disabled}
-            key={menuItem.id}
-            onSelect={() => handleMenuCommand(menuItem.id)}
-          >
-            <span>{menuItem.label}</span>
-            {menuItem.shortcut ? <Shortcut keys={menuItem.shortcut} /> : null}
-          </MenubarItem>
+          <Fragment key={menuItem.id}>
+            {menuItem.separatorBefore ? <MenubarSeparator /> : null}
+            <MenubarItem
+              disabled={menuItem.disabled}
+              onSelect={() => handleMenuCommand(menuItem.id)}
+            >
+              <span>{menuItem.label}</span>
+              {menuItem.shortcut ? <Shortcut keys={menuItem.shortcut} /> : null}
+            </MenubarItem>
+          </Fragment>
         ))}
       </MenubarContent>
     );

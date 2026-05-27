@@ -86,7 +86,7 @@ function omitRuntimeImageData(image: ImageState): ImageState {
 }
 
 function omitRuntimeImageLayerData(effectLayers: WorkspaceStore["effectLayers"]) {
-  return effectLayers.map((layer) =>
+  return normalizeEffectLayerLockState(effectLayers).map((layer) =>
     layer.type === "image"
       ? {
           ...layer,
@@ -94,6 +94,13 @@ function omitRuntimeImageLayerData(effectLayers: WorkspaceStore["effectLayers"])
         }
       : layer
   );
+}
+
+function normalizeEffectLayerLockState(effectLayers: WorkspaceStore["effectLayers"]) {
+  return effectLayers.map((layer) => ({
+    ...layer,
+    locked: layer.locked ?? false,
+  }));
 }
 
 function beginStorageHistoryTransaction() {
@@ -317,6 +324,17 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         showSkyGeometry: state.showSkyGeometry,
         spot: state.spot,
       }),
+      merge: (persistedState, currentState) => {
+        const nextState = {
+          ...currentState,
+          ...(persistedState as Partial<PersistedWorkspacePreferences>),
+        };
+
+        return {
+          ...nextState,
+          effectLayers: normalizeEffectLayerLockState(nextState.effectLayers),
+        };
+      },
       storage: createTransactionAwareSessionStorage<PersistedWorkspacePreferences>(),
       version: 2,
     }

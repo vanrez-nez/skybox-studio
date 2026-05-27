@@ -139,6 +139,7 @@ export type LayersSlice = {
   selectGradientStop: (id: string) => void;
   clearImage: () => void;
   setEffectLayerBlendMode: (id: string, blendMode: EffectLayerBlendMode) => void;
+  setEffectLayerLocked: (id: string, locked: boolean) => void;
   setPreviewEffectLayerBlendMode: (layerId: string, blendMode: EffectLayerBlendMode) => void;
   setEffectLayerOpacity: (id: string, opacity: number, options?: HistoryUpdateOptions) => void;
   setFieldGradientAmplitude: (amplitude: number, options?: HistoryUpdateOptions) => void;
@@ -309,6 +310,7 @@ const initialEffectLayers: EffectLayer[] = [
     blendMode: "normal",
     enabled: true,
     id: INITIAL_GRADIENT_LAYER_ID,
+    locked: false,
     name: "Gradient",
     opacity: 100,
     params: cloneGradientState(initialGradient),
@@ -318,6 +320,7 @@ const initialEffectLayers: EffectLayer[] = [
     blendMode: "normal",
     enabled: true,
     id: INITIAL_FIELD_GRADIENT_LAYER_ID,
+    locked: false,
     name: "Field Gradient",
     opacity: 100,
     params: cloneFieldGradientState(initialFieldGradient),
@@ -553,6 +556,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
       blendMode: "normal",
       enabled: true,
       id,
+      locked: false,
       name: gradientLayerAdapter.getDefaultName(index),
       opacity: 100,
       params: createDefaultGradientState(),
@@ -565,6 +569,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
       blendMode: "normal",
       enabled: true,
       id,
+      locked: false,
       name: fieldGradientLayerAdapter.getDefaultName(index),
       opacity: 100,
       params: createDefaultFieldGradientState(),
@@ -577,6 +582,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
       blendMode: "normal",
       enabled: true,
       id,
+      locked: false,
       name: spotLayerAdapter.getDefaultName(index),
       opacity: 100,
       params: createDefaultSpotState(),
@@ -588,6 +594,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
     blendMode: "normal",
     enabled: true,
     id,
+    locked: false,
     name: imageLayerAdapter.getDefaultName(index),
     opacity: 100,
     params: createDefaultImageState(),
@@ -936,6 +943,21 @@ export const createLayersSlice: StateCreator<
         ),
         ...getHistoryPatch(state),
         previewEffectLayerBlendMode: null,
+      };
+    }),
+  setEffectLayerLocked: (id, locked) =>
+    set((state) => {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
+
+      if (!layer || layer.locked === locked) {
+        return state;
+      }
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === id ? { ...effectLayer, locked } : effectLayer
+        ),
+        ...getHistoryPatch(state),
       };
     }),
   setPreviewEffectLayerBlendMode: (layerId, blendMode) =>

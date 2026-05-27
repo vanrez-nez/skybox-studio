@@ -10,13 +10,37 @@ export function WorkspaceSidebar() {
     state.effectLayers.find((layer) => layer.id === state.selectedLayerId)
   );
 
+  const selectedPanel = (() => {
+    if (selectedLayer?.type === "gradient") {
+      return <GradientWidget />;
+    }
+
+    if (selectedLayer?.type === "field-gradient") {
+      return <FieldGradientWidget />;
+    }
+
+    if (selectedLayer?.type === "image") {
+      return <ImageWidget />;
+    }
+
+    if (selectedLayer?.type === "spot") {
+      return <SpotWidget />;
+    }
+
+    return null;
+  })();
+
   return (
-    <aside aria-label="Workspace sidebar" className="flex h-full w-full flex-col gap-2 bg-sidebar p-2">
+    <aside
+      aria-label="Workspace sidebar"
+      className="flex h-full min-h-0 w-full flex-col gap-2 overflow-hidden bg-sidebar p-2"
+    >
       <LayersWidget />
-      {selectedLayer?.type === "gradient" ? <GradientWidget /> : null}
-      {selectedLayer?.type === "field-gradient" ? <FieldGradientWidget /> : null}
-      {selectedLayer?.type === "image" ? <ImageWidget /> : null}
-      {selectedLayer?.type === "spot" ? <SpotWidget /> : null}
+      {selectedPanel ? (
+        <div className="min-h-0 flex-1 overflow-hidden [&>.widget-panel]:h-full">
+          {selectedPanel}
+        </div>
+      ) : null}
     </aside>
   );
 }

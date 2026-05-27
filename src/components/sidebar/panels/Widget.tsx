@@ -216,7 +216,7 @@ export function Widget({
         "select-none border bg-card text-xs text-card-foreground [&_button]:text-xs [&_input]:text-xs [&_select]:text-xs",
         isFloating
           ? "floating-widget-surface fixed z-50 rounded-md shadow-2xl"
-          : "widget-panel w-full overflow-hidden rounded-md shadow-none",
+          : "widget-panel flex max-h-full min-h-0 w-full flex-col overflow-hidden rounded-md shadow-none",
         className
       )}
       style={
@@ -240,7 +240,7 @@ export function Widget({
       {hasHeader ? (
         <header
           className={cn(
-            "flex items-center gap-2 px-3",
+            "flex shrink-0 items-center gap-2 px-3",
             !isCollapsed && "border-b",
             isFloating ? "h-7" : "h-9"
           )}
@@ -278,11 +278,12 @@ export function Widget({
         <div
           aria-hidden={isCollapsed}
           className={cn(
-            "grid transition-[grid-template-rows] duration-200 ease-out",
+            "grid min-h-0 transition-[grid-template-rows] duration-200 ease-out",
+            !isCollapsed && "flex-1",
             isCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
           )}
         >
-          <div className="min-h-0 overflow-hidden">
+          <div className="min-h-0 overflow-y-auto overflow-x-hidden">
             {shouldRenderContent ? (
               <div
                 className={cn(

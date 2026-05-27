@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three/webgpu";
 
 import { useWorkspaceStore } from "@/store/app";
 import { getImageAsset } from "@/lib/image-assets";
 import type {
   CameraRotationMode,
-  SceneRenderMode,
   WorkspaceView,
 } from "@/store/modules/scene";
 import { RotationGizmo } from "./RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
 import { getEffectLayerFocusTarget, type EffectLayer } from "@/effects/effect-layer";
+import { EditorSkyboxSync } from "./EditorSkyboxSync";
 import {
   createAngularDecalPlacement,
   createSkyboxWireGeometry,
@@ -18,7 +18,6 @@ import {
   normalizeVector,
   projectDirectionToImageUv,
   Skybox,
-  type SkyboxManifest,
   spotContainsDirection,
 } from "@/runtime/index";
 import { SkyboxOrbitControls } from "./SkyboxOrbitControls";
@@ -93,44 +92,6 @@ function getPlacementDirectionFallback(placement: unknown) {
   return tuple ? tupleToVector(tuple).normalize() : undefined;
 }
 
-function createSkyboxManifestDependencyKey(
-  layers: EffectLayer[],
-  previewBlendMode: ReturnType<typeof useWorkspaceStore.getState>["previewEffectLayerBlendMode"],
-  geometryType: string
-) {
-  return JSON.stringify({
-    geometryType,
-    layers: layers.map((layer) => {
-      const blendMode =
-        previewBlendMode?.layerId === layer.id ? previewBlendMode.blendMode : layer.blendMode;
-
-      if (layer.type === "image") {
-        return {
-          blendMode,
-          enabled: layer.enabled,
-          hasSrc: Boolean(layer.params.src),
-          height: layer.params.height,
-          id: layer.id,
-          name: layer.name,
-          opacity: layer.opacity,
-          type: layer.type,
-          width: layer.params.width,
-        };
-      }
-
-      return {
-        blendMode,
-        enabled: layer.enabled,
-        id: layer.id,
-        name: layer.name,
-        opacity: layer.opacity,
-        params: layer.params,
-        type: layer.type,
-      };
-    }),
-  });
-}
-
 function createImagePlacementKey(placement: ImagePlacement | null) {
   return placement ? JSON.stringify(placement) : "null";
 }
@@ -193,17 +154,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderRef = useRef<(() => void) | null>(null);
   const syncImagePlacementsRef = useRef<(() => void) | null>(null);
-  const syncImageLayerPlacementsRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
   const syncImageTexturesRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
   const syncEditorImageStateRef = useRef<
     ((layers: EffectLayer[], selectedLayerId: string) => void) | null
   >(null);
+  const syncSkyboxRef = useRef<(() => void) | null>(null);
   const setCameraRotationModeRef = useRef<((mode: CameraRotationMode) => void) | null>(null);
   const setGroundPlaneHelperVisibleRef = useRef<((visible: boolean) => void) | null>(null);
   const setSkyGeometryVisibleRef = useRef<((visible: boolean) => void) | null>(null);
-  const updateSkyboxRef = useRef<
-    ((nextManifest: SkyboxManifest, nextRenderMode: SceneRenderMode) => void) | null
-  >(null);
   const lookAtAxisDirectionRef = useRef<((direction: VectorTuple) => void) | null>(null);
   const focusLayerRef = useRef<((layerId: string) => void) | null>(null);
   const resetOrientationRef = useRef<(() => void) | null>(null);
@@ -227,38 +185,18 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const previewEffectLayerBlendMode = useWorkspaceStore(
     (state) => state.previewEffectLayerBlendMode
   );
-  const sceneRenderMode = useWorkspaceStore((state) => state.sceneRenderMode);
   const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
   const showGroundPlaneHelper = useWorkspaceStore((state) => state.showGroundPlaneHelper);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
   const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
-  const skyboxManifestDependencyKey = useMemo(
-    () =>
-      createSkyboxManifestDependencyKey(
-        effectLayers,
-        previewEffectLayerBlendMode,
-        skyGeometryType
-      ),
-    [effectLayers, previewEffectLayerBlendMode, skyGeometryType]
-  );
-  const skyboxManifest = useMemo(
-    () =>
-      createSkyboxManifest(
-        effectLayers,
-        previewEffectLayerBlendMode,
-        { type: skyGeometryType }
-      ),
-    [skyboxManifestDependencyKey]
-  );
-
   useEffect(() => {
     effectLayersRef.current = effectLayers;
     selectedLayerIdRef.current = selectedLayerId;
     syncImagePlacementsRef.current?.();
-    syncImageLayerPlacementsRef.current?.(effectLayers);
     syncImageTexturesRef.current?.(effectLayers);
     syncEditorImageStateRef.current?.(effectLayers, selectedLayerId);
-  }, [effectLayers, selectedLayerId]);
+    syncSkyboxRef.current?.();
+  }, [effectLayers, previewEffectLayerBlendMode, selectedLayerId, skyGeometryType]);
 
   const handleGizmoAxisSelect = useCallback((direction: VectorTuple) => {
     lookAtAxisDirectionRef.current?.(direction);
@@ -293,14 +231,6 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   }, [showGroundPlaneHelper]);
 
   useEffect(() => {
-    if (!updateSkyboxRef.current) {
-      return;
-    }
-
-    updateSkyboxRef.current(skyboxManifest, sceneRenderMode);
-  }, [sceneRenderMode, skyboxManifest]);
-
-  useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
 
@@ -314,14 +244,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     });
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    let currentSkyGeometryType = skyboxManifest.version === 2
-      ? skyboxManifest.geometry?.type ?? "box"
-      : "box";
+    const initialSkyboxManifest = createSkyboxManifest(
+      effectLayersRef.current,
+      previewEffectLayerBlendMode,
+      { type: skyGeometryType }
+    );
+    let currentSkyGeometryType = skyGeometryType;
     let disposed = false;
     let rendererReady = false;
     const imageTextureRecords = new Map<
       string,
-      { ready: boolean; src: string; texture: THREE.Texture }
+      { bindingsRefreshed: boolean; ready: boolean; src: string; texture: THREE.Texture }
     >();
     const imageAssetUrlRecords = new Map<string, { assetId: string; src: string }>();
     const pendingAssetLoads = new Set<string>();
@@ -331,7 +264,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     let pendingImagePlacementFrame: number | null = null;
     const liveSkybox = new Skybox()
       .setRenderer(renderer)
-      .fromManifest(skyboxManifest)
+      .fromManifest(initialSkyboxManifest)
       .setEditorPresentationEnabled(true)
       .load();
     const skyGeometry = new THREE.LineSegments(
@@ -392,6 +325,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       material.toneMapped = false;
       material.transparent = true;
     });
+    scene.add(liveSkybox);
     scene.add(skyGeometry);
     scene.add(groundPlaneHelper);
 
@@ -507,15 +441,26 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         activeImageLayerIds.add(layer.id);
 
         if (!layer.params.src && layer.params.assetId && !pendingAssetLoads.has(layer.id)) {
-          pendingAssetLoads.add(layer.id);
-          void getImageAsset(layer.params.assetId).then((blob) => {
-            pendingAssetLoads.delete(layer.id);
+          const assetId = layer.params.assetId;
+          const layerId = layer.id;
+
+          pendingAssetLoads.add(layerId);
+          void getImageAsset(assetId).then((blob) => {
+            pendingAssetLoads.delete(layerId);
 
             if (!blob || disposed) {
               return;
             }
 
-            const existingAssetUrlRecord = imageAssetUrlRecords.get(layer.id);
+            const currentLayer = useWorkspaceStore.getState().effectLayers.find(
+              (effectLayer) => effectLayer.id === layerId
+            );
+
+            if (currentLayer?.type !== "image" || currentLayer.params.assetId !== assetId) {
+              return;
+            }
+
+            const existingAssetUrlRecord = imageAssetUrlRecords.get(layerId);
 
             if (existingAssetUrlRecord) {
               URL.revokeObjectURL(existingAssetUrlRecord.src);
@@ -523,11 +468,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
             const src = URL.createObjectURL(blob);
 
-            imageAssetUrlRecords.set(layer.id, {
-              assetId: layer.params.assetId ?? "",
+            imageAssetUrlRecords.set(layerId, {
+              assetId,
               src,
             });
-            setImageAssetSource(layer.id, src);
+            setImageAssetSource(layerId, src);
           });
           return;
         }
@@ -549,6 +494,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
         configureImageTexture(texture);
         imageTextureRecords.set(layer.id, {
+          bindingsRefreshed: false,
           ready: false,
           src,
           texture,
@@ -564,6 +510,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           record.ready = true;
           texture.needsUpdate = true;
           pushImageTexturesToSkybox();
+
+          if (!record.bindingsRefreshed) {
+            record.bindingsRefreshed = true;
+            liveSkybox.refreshImageTextureBindings();
+          }
 
           if (!disposed) {
             render();
@@ -596,7 +547,17 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           texture.needsUpdate = true;
           window.queueMicrotask(() => {
             if (!disposed) {
+              const currentRecord = imageTextureRecords.get(layer.id);
+
+              if (!currentRecord || currentRecord.src !== src) {
+                return;
+              }
+
               pushImageTexturesToSkybox();
+              if (!currentRecord.bindingsRefreshed) {
+                currentRecord.bindingsRefreshed = true;
+                liveSkybox.refreshImageTextureBindings();
+              }
               render();
             }
           });
@@ -629,50 +590,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     syncImageTexturesRef.current = syncImageTextures;
     syncImageTextures(effectLayersRef.current);
 
-    const syncImageLayerPlacements = (layers: EffectLayer[]) => {
-      let changed = false;
-      const activeImageLayerIds = new Set<string>();
-
-      layers.forEach((layer) => {
-        if (layer.type !== "image") {
-          return;
-        }
-
-        activeImageLayerIds.add(layer.id);
-        const placementKey = createImagePlacementKey(layer.params.placement);
-
-        if (imagePlacementKeys.get(layer.id) === placementKey) {
-          return;
-        }
-
-        imagePlacementKeys.set(layer.id, placementKey);
-        liveSkybox.setImageLayerPlacement(layer.id, layer.params.placement);
-        changed = true;
-      });
-
-      Array.from(imagePlacementKeys.keys()).forEach((layerId) => {
-        if (activeImageLayerIds.has(layerId)) {
-          return;
-        }
-
-        imagePlacementKeys.delete(layerId);
-        liveSkybox.setImageLayerPlacement(layerId, null);
-        changed = true;
-      });
-
-      if (changed) {
-        render();
-      }
-    };
-
-    syncImageLayerPlacementsRef.current = syncImageLayerPlacements;
-    syncImageLayerPlacements(effectLayersRef.current);
-
-    const syncSkyGeometry = (nextManifest: SkyboxManifest) => {
-      const nextSkyGeometryType = nextManifest.version === 2
-        ? nextManifest.geometry?.type ?? "box"
-        : "box";
-
+    const syncSkyGeometry = (nextSkyGeometryType: typeof skyGeometryType) => {
       if (nextSkyGeometryType === currentSkyGeometryType) {
         return;
       }
@@ -685,6 +603,29 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       syncImagePlacementsRef.current?.();
       render();
     };
+
+    const editorSkyboxSync = new EditorSkyboxSync({
+      onRender: render,
+      onSkyGeometryChange: syncSkyGeometry,
+      skybox: liveSkybox,
+    });
+    const syncSkybox = () => {
+      const state = useWorkspaceStore.getState();
+
+      effectLayersRef.current = state.effectLayers;
+      editorSkyboxSync.sync({
+        effectLayers: state.effectLayers,
+        previewBlendMode: state.previewEffectLayerBlendMode,
+        skyGeometryType: state.skyGeometryType,
+      });
+    };
+
+    editorSkyboxSync.prime({
+      effectLayers: effectLayersRef.current,
+      previewBlendMode: previewEffectLayerBlendMode,
+      skyGeometryType,
+    });
+    syncSkyboxRef.current = syncSkybox;
 
     const syncImagePlacements = () => {
       const unplacedImageLayer = effectLayersRef.current.find(
@@ -734,22 +675,6 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       render();
     });
 
-    const applySceneRenderMode = (
-      nextManifest: SkyboxManifest,
-      nextRenderMode: SceneRenderMode
-    ) => {
-      syncSkyGeometry(nextManifest);
-      scene.background = null;
-      liveSkybox.setManifest(nextManifest);
-
-      if (!liveSkybox.parent) {
-        scene.add(liveSkybox);
-      }
-
-      render();
-    };
-
-    updateSkyboxRef.current = applySceneRenderMode;
     setCameraRotationModeRef.current = (nextRotationMode) => {
       orbitControls.rotationMode = nextRotationMode;
       orbitControls.stop();
@@ -997,13 +922,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       );
 
       setSpotPosition(centerDirection, { history: "skip" });
-      const state = useWorkspaceStore.getState();
-      liveSkybox.setManifest(createSkyboxManifest(
-        state.effectLayers,
-        state.previewEffectLayerBlendMode,
-        { type: state.skyGeometryType }
-      ));
-      render();
+      syncSkybox();
     };
 
     lookAtAxisDirectionRef.current = lookAtAxisDirection;
@@ -1268,7 +1187,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       rendererReady = true;
-      applySceneRenderMode(skyboxManifest, sceneRenderMode);
+      syncSkybox();
       resize();
     });
 
@@ -1279,10 +1198,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       setSkyGeometryVisibleRef.current = null;
       setCameraRotationModeRef.current = null;
       syncImagePlacementsRef.current = null;
-      syncImageLayerPlacementsRef.current = null;
       syncImageTexturesRef.current = null;
       syncEditorImageStateRef.current = null;
-      updateSkyboxRef.current = null;
+      syncSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
       focusLayerRef.current = null;
       resetOrientationRef.current = null;

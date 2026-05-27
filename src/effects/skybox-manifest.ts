@@ -6,7 +6,7 @@ import type {
 } from "@/runtime/index";
 import type { EffectLayerBlendModePreview } from "@/store/modules/layers";
 
-function layerToManifestLayer(
+export function layerToManifestLayer(
   layer: EffectLayer,
   previewBlendMode?: EffectLayerBlendModePreview | null
 ): SkyboxManifestLayer {

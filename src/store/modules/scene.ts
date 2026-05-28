@@ -15,6 +15,7 @@ export type MenuCommandId =
 export type MenuEventId = MenuId | MenuCommandId;
 export type CameraRotationMode = "drag" | "scroll";
 export type SceneRenderMode = "live" | "texture-baked";
+export type SceneLookDirection = [number, number, number];
 export type SkyGeometryType = "box" | "sphere";
 
 export type MenuEvent = {
@@ -32,6 +33,7 @@ export type SceneSlice = {
   cameraRotationMode: CameraRotationMode;
   lastLayerFocusRequest: LayerFocusRequest | null;
   lastMenuEvent: MenuEvent | null;
+  sceneLookDirection: SceneLookDirection;
   sceneRenderMode: SceneRenderMode;
   skyGeometryType: SkyGeometryType;
   showGroundPlaneHelper: boolean;
@@ -41,6 +43,7 @@ export type SceneSlice = {
   emitMenuEvent: (id: MenuEventId) => void;
   setActiveView: (view: WorkspaceView) => void;
   setCameraRotationMode: (mode: CameraRotationMode) => void;
+  setSceneLookDirection: (direction: SceneLookDirection) => void;
   setSceneRenderMode: (mode: SceneRenderMode) => void;
   setSkyGeometryType: (type: SkyGeometryType) => void;
   setShowGroundPlaneHelper: (visible: boolean) => void;
@@ -63,6 +66,7 @@ export const createSceneSlice: StateCreator<
   cameraRotationMode: "drag",
   lastLayerFocusRequest: null,
   lastMenuEvent: null,
+  sceneLookDirection: [0, 0, -1],
   sceneRenderMode: "live",
   skyGeometryType: "box",
   showGroundPlaneHelper: false,
@@ -73,6 +77,7 @@ export const createSceneSlice: StateCreator<
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
   setActiveView: (view) => set({ activeView: view }),
   setCameraRotationMode: (mode) => set({ cameraRotationMode: mode }),
+  setSceneLookDirection: (direction) => set({ sceneLookDirection: direction }),
   setSceneRenderMode: (mode) => set({ sceneRenderMode: mode === "texture-baked" ? "live" : mode }),
   setSkyGeometryType: (type) => set({ skyGeometryType: type }),
   setShowGroundPlaneHelper: (visible) => set({ showGroundPlaneHelper: visible }),

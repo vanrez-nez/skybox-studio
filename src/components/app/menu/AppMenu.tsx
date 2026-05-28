@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef } from "react";
 import { HotkeyManager } from "@tanstack/hotkeys";
+import type { RegisterableHotkey } from "@tanstack/hotkeys";
 
 import { Kbd, KbdGroup } from "@/components/ui/primitives/kbd";
 import {
@@ -25,6 +26,7 @@ import {
   type SkyGeometryType,
 } from "@/store/modules/scene";
 import { getEffectLayerFocusTarget } from "@/effects/effect-layer";
+import { getEffectLayerInterface } from "@/effects/effect-layer-interfaces";
 
 type AppMenuItem = {
   disabled?: boolean;
@@ -38,6 +40,26 @@ const fileMenuItems: AppMenuItem[] = [
   { id: "file.export", label: "Export" },
   { id: "file.load", label: "Load" },
 ];
+const LAYER_TRANSFORM_KEYBOARD_SCOPE = "layer-transform-keyboard";
+const LAYER_TRANSFORM_KEYBOARD_COMMIT_DELAY_MS = 300;
+const LAYER_POSITION_DIRECTIONS = [
+  { delta: { x: -1, y: 0 }, key: "ArrowLeft" },
+  { delta: { x: 1, y: 0 }, key: "ArrowRight" },
+  { delta: { x: 0, y: 1 }, key: "ArrowUp" },
+  { delta: { x: 0, y: -1 }, key: "ArrowDown" },
+] as const;
+const LAYER_POSITION_MODIFIERS = [
+  {},
+  { shift: true },
+  { alt: true },
+  { alt: true, shift: true },
+] as const;
+const LAYER_POSITION_HOTKEYS = LAYER_POSITION_MODIFIERS.flatMap((modifier) =>
+  LAYER_POSITION_DIRECTIONS.map((direction) => ({
+    delta: direction.delta,
+    hotkey: { key: direction.key, ...modifier } satisfies RegisterableHotkey,
+  }))
+);
 
 const menuItems: Array<{
   id: MenuId;
@@ -75,6 +97,14 @@ function getDeleteShortcutLabel() {
   return isMacPlatform() ? "⌫" : "Delete";
 }
 
+function getLayerPositionNudgeStep(event: KeyboardEvent) {
+  if (event.altKey) {
+    return 0.1;
+  }
+
+  return event.shiftKey ? 10 : 1;
+}
+
 function Shortcut({ keys }: { keys: string[] }) {
   return (
     <KbdGroup className="ml-auto pl-8">
@@ -107,12 +137,20 @@ export function AppMenu() {
   const setShowSkyGeometry = useWorkspaceStore((state) => state.setShowSkyGeometry);
   const deleteSelectedEffectLayer = useWorkspaceStore((state) => state.deleteSelectedEffectLayer);
   const emitLayerFocusRequest = useWorkspaceStore((state) => state.emitLayerFocusRequest);
+  const applyEffectLayerModifier = useWorkspaceStore((state) => state.applyEffectLayerModifier);
+  const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
+  const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const setEffectLayerLocked = useWorkspaceStore((state) => state.setEffectLayerLocked);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
+  const applyEffectLayerModifierRef = useRef(applyEffectLayerModifier);
+  const beginHistoryTransactionRef = useRef(beginHistoryTransaction);
+  const commitHistoryTransactionRef = useRef(commitHistoryTransaction);
   const undoRef = useRef(undoHistory);
   const redoRef = useRef(redoHistory);
   const deleteSelectedEffectLayerRef = useRef(deleteSelectedEffectLayer);
   const emitLayerFocusRequestRef = useRef(emitLayerFocusRequest);
+  const layerTransformKeyboardActiveRef = useRef(false);
+  const layerTransformKeyboardTimerRef = useRef<number | null>(null);
   const selectedLayerIdRef = useRef(selectedLayerId);
   const toggleEffectLayerEnabledRef = useRef(toggleEffectLayerEnabled);
   const modifierKeyLabel = getModifierKeyLabel();
@@ -181,6 +219,18 @@ export function AppMenu() {
   }, [deleteSelectedEffectLayer]);
 
   useEffect(() => {
+    applyEffectLayerModifierRef.current = applyEffectLayerModifier;
+  }, [applyEffectLayerModifier]);
+
+  useEffect(() => {
+    beginHistoryTransactionRef.current = beginHistoryTransaction;
+  }, [beginHistoryTransaction]);
+
+  useEffect(() => {
+    commitHistoryTransactionRef.current = commitHistoryTransaction;
+  }, [commitHistoryTransaction]);
+
+  useEffect(() => {
     emitLayerFocusRequestRef.current = emitLayerFocusRequest;
   }, [emitLayerFocusRequest]);
 
@@ -194,6 +244,67 @@ export function AppMenu() {
 
   useEffect(() => {
     const hotkeys = HotkeyManager.getInstance();
+    const commitKeyboardTransform = () => {
+      if (layerTransformKeyboardTimerRef.current !== null) {
+        window.clearTimeout(layerTransformKeyboardTimerRef.current);
+        layerTransformKeyboardTimerRef.current = null;
+      }
+
+      if (!layerTransformKeyboardActiveRef.current) {
+        return;
+      }
+
+      layerTransformKeyboardActiveRef.current = false;
+      commitHistoryTransactionRef.current(LAYER_TRANSFORM_KEYBOARD_SCOPE);
+    };
+    const scheduleKeyboardTransformCommit = () => {
+      if (layerTransformKeyboardTimerRef.current !== null) {
+        window.clearTimeout(layerTransformKeyboardTimerRef.current);
+      }
+
+      layerTransformKeyboardTimerRef.current = window.setTimeout(
+        commitKeyboardTransform,
+        LAYER_TRANSFORM_KEYBOARD_COMMIT_DELAY_MS
+      );
+    };
+    const nudgeSelectedLayerPosition = (
+      event: KeyboardEvent,
+      direction: { x: number; y: number }
+    ) => {
+      const state = useWorkspaceStore.getState();
+      const selectedLayer = state.effectLayers.find(
+        (effectLayer) => effectLayer.id === state.selectedLayerId
+      );
+
+      if (
+        !selectedLayer ||
+        selectedLayer.locked ||
+        !getEffectLayerInterface(selectedLayer, "2d-position")
+      ) {
+        return;
+      }
+
+      const step = getLayerPositionNudgeStep(event);
+
+      if (!layerTransformKeyboardActiveRef.current) {
+        layerTransformKeyboardActiveRef.current = true;
+        beginHistoryTransactionRef.current(LAYER_TRANSFORM_KEYBOARD_SCOPE);
+      }
+
+      applyEffectLayerModifierRef.current(
+        selectedLayer.id,
+        {
+          delta: {
+            x: direction.x * step,
+            y: direction.y * step,
+          },
+          interface: "2d-position",
+          operation: "translate",
+        },
+        { history: "skip" }
+      );
+      scheduleKeyboardTransformCommit();
+    };
     const undoHandle = hotkeys.register(
       "Mod+Z",
       () => {
@@ -267,6 +378,18 @@ export function AppMenu() {
         stopPropagation: true,
       }
     );
+    const layerPositionHandles = LAYER_POSITION_HOTKEYS.map((positionHotkey) =>
+      hotkeys.register(
+        positionHotkey.hotkey,
+        (event) => nudgeSelectedLayerPosition(event, positionHotkey.delta),
+        {
+          ignoreInputs: true,
+          meta: { name: "Nudge Layer Position" },
+          preventDefault: true,
+          stopPropagation: true,
+        }
+      )
+    );
 
     return () => {
       undoHandle.unregister();
@@ -274,6 +397,8 @@ export function AppMenu() {
       toggleVisibilityHandle.unregister();
       focusLayerHandle.unregister();
       deleteHandle.unregister();
+      layerPositionHandles.forEach((handle) => handle.unregister());
+      commitKeyboardTransform();
     };
   }, [deleteShortcutKey]);
 

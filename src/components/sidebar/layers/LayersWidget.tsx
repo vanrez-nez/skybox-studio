@@ -555,7 +555,13 @@ export function LayersWidget() {
                   <Sparkles />
                   Field Gradient
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => addEffectLayer("spot")}>
+                <DropdownMenuItem
+                  onSelect={() =>
+                    addEffectLayer("spot", {
+                      centerDirection: useWorkspaceStore.getState().sceneLookDirection,
+                    })
+                  }
+                >
                   <CircleDot />
                   Spot
                 </DropdownMenuItem>

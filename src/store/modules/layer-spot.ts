@@ -1,6 +1,8 @@
 import type { SkyboxSpotParams } from "@/runtime/manifest";
+import type { VectorTuple } from "@/runtime/image-placement-transform";
 import {
   createDefaultSpotParams,
+  normalizeSpotParams,
   radiusScaleFromSpot,
   spotFromRadiusScale,
 } from "@/runtime/spot-transform";
@@ -58,8 +60,13 @@ const SPOT_LIGHT_PARAMETER_LIMITS: Record<SpotLightParameterKey, { max: number; 
   haloStrength: { min: 0, max: 1.4 },
 };
 
-export function createDefaultSpotState(): SpotState {
-  const defaultSpot = createDefaultSpotParams();
+export function createDefaultSpotState(centerDirection?: VectorTuple): SpotState {
+  const defaultSpot = centerDirection
+    ? normalizeSpotParams({
+        ...createDefaultSpotParams(),
+        centerDirection,
+      })
+    : createDefaultSpotParams();
 
   return {
     ...defaultSpot,

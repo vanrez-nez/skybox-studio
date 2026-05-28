@@ -3,6 +3,10 @@ import type { Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge
 import { reorderWithEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/reorder-with-edge";
 
 import {
+  applyEffectLayerModifier as applyEffectLayerModifierToLayer,
+  type EffectLayerModifier,
+} from "@/effects/effect-layer-interfaces";
+import {
   cloneFieldGradientState,
   cloneGradientState,
   cloneImageState,
@@ -63,6 +67,7 @@ export type {
   FieldGradientAnchor,
   FieldGradientMode,
   FieldGradientState,
+  EffectLayerModifier,
   GradientMode,
   GradientState,
   GradientStop,
@@ -83,6 +88,10 @@ export type LayersHistorySnapshot = {
   selectedLayerId: string;
 };
 
+export type AddEffectLayerOptions = {
+  centerDirection?: [number, number, number];
+};
+
 export type LayersSlice = {
   effectLayers: EffectLayer[];
   fieldGradient: FieldGradientState;
@@ -91,7 +100,12 @@ export type LayersSlice = {
   spot: SpotState;
   previewEffectLayerBlendMode: EffectLayerBlendModePreview | null;
   selectedLayerId: string;
-  addEffectLayer: (type: EffectLayerType) => void;
+  addEffectLayer: (type: EffectLayerType, options?: AddEffectLayerOptions) => void;
+  applyEffectLayerModifier: (
+    id: string,
+    modifier: EffectLayerModifier,
+    options?: HistoryUpdateOptions
+  ) => void;
   addFieldGradientAnchor: (anchor: Omit<FieldGradientAnchor, "id">) => void;
   clearPreviewEffectLayerBlendMode: () => void;
   addGradientStop: (stop: Omit<GradientStop, "id" | "midpoint"> & { midpoint?: number }) => void;
@@ -209,7 +223,11 @@ function restoreLayersHistorySnapshot(snapshot: LayersHistorySnapshot, currentSt
   };
 }
 
-function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
+function createEffectLayer(
+  type: EffectLayerType,
+  index: number,
+  options: AddEffectLayerOptions = {}
+): EffectLayer {
   const id = `layer-${type}-${Date.now()}-${index}`;
 
   if (type === "gradient") {
@@ -246,7 +264,7 @@ function createEffectLayer(type: EffectLayerType, index: number): EffectLayer {
       locked: false,
       name: spotLayerAdapter.getDefaultName(index),
       opacity: 100,
-      params: createDefaultSpotState(),
+      params: createDefaultSpotState(options.centerDirection),
       type,
     };
   }
@@ -278,10 +296,10 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
   spot: initialSpot,
   previewEffectLayerBlendMode: null,
   selectedLayerId: "",
-  addEffectLayer: (type) =>
+  addEffectLayer: (type, options) =>
     set((state) => {
       const layerTypeCount = state.effectLayers.filter((layer) => layer.type === type).length + 1;
-      const nextLayer = createEffectLayer(type, layerTypeCount);
+      const nextLayer = createEffectLayer(type, layerTypeCount, options);
 
       return {
         effectLayers: [nextLayer, ...state.effectLayers],
@@ -289,6 +307,30 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         ...getHistoryPatch(state),
         ...selectedLayerStatePatch(nextLayer),
         previewEffectLayerBlendMode: null,
+      };
+    }),
+  applyEffectLayerModifier: (id, modifier, options) =>
+    set((state) => {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
+
+      if (!layer) {
+        return state;
+      }
+
+      const nextLayer = applyEffectLayerModifierToLayer(layer, modifier);
+
+      if (!nextLayer) {
+        return state;
+      }
+
+      const normalizedNextLayer = cloneEffectLayer(nextLayer);
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === id ? normalizedNextLayer : effectLayer
+        ),
+        ...(state.selectedLayerId === id ? selectedLayerStatePatch(normalizedNextLayer) : {}),
+        ...getHistoryPatch(state, options),
       };
     }),
   clearPreviewEffectLayerBlendMode: () => set({ previewEffectLayerBlendMode: null }),

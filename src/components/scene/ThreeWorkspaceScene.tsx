@@ -155,7 +155,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const renderRef = useRef<(() => void) | null>(null);
   const syncImagePlacementsRef = useRef<(() => void) | null>(null);
   const syncImageTexturesRef = useRef<((layers: EffectLayer[]) => void) | null>(null);
-  const syncEditorImageStateRef = useRef<
+  const syncEditorLayerStateRef = useRef<
     ((layers: EffectLayer[], selectedLayerId: string) => void) | null
   >(null);
   const syncSkyboxRef = useRef<(() => void) | null>(null);
@@ -179,6 +179,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const setImageAssetSource = useWorkspaceStore((state) => state.setImageAssetSource);
   const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
+  const setSceneLookDirection = useWorkspaceStore((state) => state.setSceneLookDirection);
   const setSpotPosition = useWorkspaceStore((state) => state.setSpotPosition);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const lastLayerFocusRequest = useWorkspaceStore((state) => state.lastLayerFocusRequest);
@@ -194,7 +195,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     selectedLayerIdRef.current = selectedLayerId;
     syncImagePlacementsRef.current?.();
     syncImageTexturesRef.current?.(effectLayers);
-    syncEditorImageStateRef.current?.(effectLayers, selectedLayerId);
+    syncEditorLayerStateRef.current?.(effectLayers, selectedLayerId);
     syncSkyboxRef.current?.();
   }, [effectLayers, previewEffectLayerBlendMode, selectedLayerId, skyGeometryType]);
 
@@ -304,8 +305,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       offsetY: 0,
       pointerId: -1,
     };
-    let hoveredImageLayerId: string | null = null;
-    let selectedImageLayerId: string | null = null;
+    let hoveredEditorLayerId: string | null = null;
+    let selectedEditorLayerId: string | null = null;
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
     camera.position.set(0, 0, 0);
     camera.rotation.copy(cameraRotation);
@@ -349,61 +350,63 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       render();
     };
 
-    const getEditorImageLayerId = (layers: EffectLayer[], layerId: string) => {
+    const getEditorLayerId = (layers: EffectLayer[], layerId: string) => {
       const layer = layers.find((effectLayer) => effectLayer.id === layerId);
 
-      return layer?.type === "image" && layer.enabled ? layer.id : null;
+      return layer && (layer.type === "image" || layer.type === "spot") && layer.enabled
+        ? layer.id
+        : null;
     };
 
-    const setEditorImageState = (nextState: {
-      hoveredImageLayerId?: string | null;
-      selectedImageLayerId?: string | null;
+    const setEditorLayerState = (nextState: {
+      hoveredLayerId?: string | null;
+      selectedLayerId?: string | null;
     }) => {
-      const nextHoveredImageLayerId = Object.prototype.hasOwnProperty.call(nextState, "hoveredImageLayerId")
-        ? nextState.hoveredImageLayerId ?? null
-        : hoveredImageLayerId;
-      const nextSelectedImageLayerId = Object.prototype.hasOwnProperty.call(nextState, "selectedImageLayerId")
-        ? nextState.selectedImageLayerId ?? null
-        : selectedImageLayerId;
+      const nextHoveredEditorLayerId = Object.prototype.hasOwnProperty.call(nextState, "hoveredLayerId")
+        ? nextState.hoveredLayerId ?? null
+        : hoveredEditorLayerId;
+      const nextSelectedEditorLayerId = Object.prototype.hasOwnProperty.call(nextState, "selectedLayerId")
+        ? nextState.selectedLayerId ?? null
+        : selectedEditorLayerId;
 
       if (
-        hoveredImageLayerId === nextHoveredImageLayerId &&
-        selectedImageLayerId === nextSelectedImageLayerId
+        hoveredEditorLayerId === nextHoveredEditorLayerId &&
+        selectedEditorLayerId === nextSelectedEditorLayerId
       ) {
         return;
       }
 
-      hoveredImageLayerId = nextHoveredImageLayerId;
-      selectedImageLayerId = nextSelectedImageLayerId;
-      liveSkybox.setEditorImageState({
-        hoveredImageLayerId,
-        selectedImageLayerId,
+      hoveredEditorLayerId = nextHoveredEditorLayerId;
+      selectedEditorLayerId = nextSelectedEditorLayerId;
+      liveSkybox.setEditorLayerState({
+        hoveredLayerId: hoveredEditorLayerId,
+        selectedLayerId: selectedEditorLayerId,
       });
       render();
     };
 
-    const setHoveredImageLayerId = (layerId: string | null) => {
-      setEditorImageState({ hoveredImageLayerId: layerId });
+    const setHoveredEditorLayerId = (layerId: string | null) => {
+      setEditorLayerState({ hoveredLayerId: layerId });
     };
 
-    const setSelectedImageLayerId = (layerId: string | null) => {
-      setEditorImageState({ selectedImageLayerId: layerId });
+    const setSelectedEditorLayerId = (layerId: string | null) => {
+      setEditorLayerState({ selectedLayerId: layerId });
     };
 
-    syncEditorImageStateRef.current = (layers, nextSelectedLayerId) => {
-      const nextHoveredImageLayerId = hoveredImageLayerId
-        ? getEditorImageLayerId(layers, hoveredImageLayerId)
+    syncEditorLayerStateRef.current = (layers, nextSelectedLayerId) => {
+      const nextHoveredEditorLayerId = hoveredEditorLayerId
+        ? getEditorLayerId(layers, hoveredEditorLayerId)
         : null;
-      const nextSelectedImageLayerId = nextSelectedLayerId
-        ? getEditorImageLayerId(layers, nextSelectedLayerId)
+      const nextSelectedEditorLayerId = nextSelectedLayerId
+        ? getEditorLayerId(layers, nextSelectedLayerId)
         : null;
 
-      setEditorImageState({
-        hoveredImageLayerId: nextHoveredImageLayerId,
-        selectedImageLayerId: nextSelectedImageLayerId,
+      setEditorLayerState({
+        hoveredLayerId: nextHoveredEditorLayerId,
+        selectedLayerId: nextSelectedEditorLayerId,
       });
     };
-    syncEditorImageStateRef.current(effectLayersRef.current, selectedLayerId);
+    syncEditorLayerStateRef.current(effectLayersRef.current, selectedLayerId);
 
     const configureImageTexture = (texture: THREE.Texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -653,8 +656,23 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     syncImagePlacementsRef.current = syncImagePlacements;
 
+    let sceneLookDirectionKey = "";
+
     const syncGizmoOrientation = () => {
+      const forwardDirection = new THREE.Vector3(0, 0, -1)
+        .applyQuaternion(camera.quaternion)
+        .normalize();
+      const nextSceneLookDirection = vectorToTuple(forwardDirection);
+      const nextSceneLookDirectionKey = nextSceneLookDirection
+        .map((value) => value.toFixed(5))
+        .join(",");
+
       setGizmoOrientation(quaternionToTuple(camera.quaternion));
+
+      if (sceneLookDirectionKey !== nextSceneLookDirectionKey) {
+        sceneLookDirectionKey = nextSceneLookDirectionKey;
+        setSceneLookDirection(nextSceneLookDirection);
+      }
     };
 
     const cancelCameraAnimation = () => {
@@ -822,10 +840,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       return hits;
     };
 
-    const updateHoveredImageLayerFromPointer = (event: PointerEvent) => {
-      const imageHit = getSceneLayerHits(event).find((hit) => hit.type === "image");
+    const updateHoveredEditorLayerFromPointer = (event: PointerEvent) => {
+      const editorHit = getSceneLayerHits(event).find(
+        (hit) => hit.type === "image" || hit.type === "spot"
+      );
 
-      setHoveredImageLayerId(imageHit?.layerId ?? null);
+      setHoveredEditorLayerId(editorHit?.layerId ?? null);
     };
 
     const syncImageLayerPlacementLive = (layerId: string, placement: ImagePlacement | null) => {
@@ -985,7 +1005,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const selectSceneLayerHit = (hit: SceneLayerHit) => {
       selectedLayerIdRef.current = hit.layerId;
       selectEffectLayer(hit.layerId);
-      setSelectedImageLayerId(hit.type === "image" ? hit.layerId : null);
+      setSelectedEditorLayerId(hit.type === "image" || hit.type === "spot" ? hit.layerId : null);
     };
 
     const beginImageDrag = (event: PointerEvent, hit: SceneLayerHit) => {
@@ -1007,7 +1027,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       const halfHeight = Math.tan(placement.angularHeight / 2);
 
       selectSceneLayerHit(hit);
-      setHoveredImageLayerId(hit.layerId);
+      setHoveredEditorLayerId(hit.layerId);
       beginHistoryTransaction(IMAGE_PLACEMENT_TRANSACTION_SCOPE);
       imageDragState.layerId = hit.layerId;
       imageDragState.pointerId = event.pointerId;
@@ -1074,8 +1094,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      const hoveredImageHit = hits.find((hit) => hit.type === "image");
-      setHoveredImageLayerId(hoveredImageHit?.layerId ?? null);
+      const hoveredEditorHit = hits.find((hit) => hit.type === "image" || hit.type === "spot");
+      setHoveredEditorLayerId(hoveredEditorHit?.layerId ?? null);
 
       const selectedImageHit = hits.find(
         (hit) => hit.type === "image" && hit.layerId === selectedLayerIdRef.current
@@ -1132,7 +1152,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         event.preventDefault();
         imageDragState.hasMoved = true;
         updateImageDragPlacement(event);
-        setHoveredImageLayerId(imageDragState.layerId);
+        setHoveredEditorLayerId(imageDragState.layerId);
         return;
       }
 
@@ -1140,23 +1160,24 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         event.preventDefault();
         spotDragState.hasMoved = true;
         updateSpotDragPosition(event);
+        setHoveredEditorLayerId(spotDragState.layerId);
         return;
       }
 
       if (!orbitControls.isDragging) {
-        updateHoveredImageLayerFromPointer(event);
+        updateHoveredEditorLayerFromPointer(event);
         canvas.style.cursor = "grab";
       }
     };
 
-    const clearHoveredImageLayer = () => {
-      setHoveredImageLayerId(null);
+    const clearHoveredEditorLayer = () => {
+      setHoveredEditorLayerId(null);
     };
 
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("dblclick", onDoubleClick);
     canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerleave", clearHoveredImageLayer);
+    canvas.addEventListener("pointerleave", clearHoveredEditorLayer);
     const releaseScenePointer = (event: PointerEvent) => {
       releaseImagePointer(event);
       releaseSpotPointer(event);
@@ -1199,7 +1220,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       setCameraRotationModeRef.current = null;
       syncImagePlacementsRef.current = null;
       syncImageTexturesRef.current = null;
-      syncEditorImageStateRef.current = null;
+      syncEditorLayerStateRef.current = null;
       syncSkyboxRef.current = null;
       lookAtAxisDirectionRef.current = null;
       focusLayerRef.current = null;
@@ -1213,7 +1234,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("dblclick", onDoubleClick);
       canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerleave", clearHoveredImageLayer);
+      canvas.removeEventListener("pointerleave", clearHoveredEditorLayer);
       canvas.removeEventListener("pointerup", releaseScenePointer);
       canvas.removeEventListener("pointercancel", releaseScenePointer);
       canvas.removeEventListener("lostpointercapture", releaseScenePointer);

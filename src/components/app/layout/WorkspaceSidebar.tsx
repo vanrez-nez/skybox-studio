@@ -3,6 +3,7 @@ import { GradientWidget } from "@/components/sidebar/panels/GradientWidget";
 import { ImageWidget } from "@/components/sidebar/panels/ImageWidget";
 import { LayersWidget } from "@/components/sidebar/layers/LayersWidget";
 import { SpotWidget } from "@/components/sidebar/panels/SpotWidget";
+import { getEffectLayerAddon } from "@/effects/effect-layer";
 import { useWorkspaceStore } from "@/store/app";
 
 export function WorkspaceSidebar() {
@@ -11,23 +12,18 @@ export function WorkspaceSidebar() {
   );
 
   const selectedPanel = (() => {
-    if (selectedLayer?.type === "gradient") {
-      return <GradientWidget />;
+    if (!selectedLayer) {
+      return null;
     }
 
-    if (selectedLayer?.type === "field-gradient") {
-      return <FieldGradientWidget />;
-    }
+    const panelId = getEffectLayerAddon(selectedLayer.type).panelId;
 
-    if (selectedLayer?.type === "image") {
-      return <ImageWidget />;
-    }
-
-    if (selectedLayer?.type === "spot") {
-      return <SpotWidget />;
-    }
-
-    return null;
+    return {
+      "field-gradient": <FieldGradientWidget />,
+      gradient: <GradientWidget />,
+      image: <ImageWidget />,
+      spot: <SpotWidget />,
+    }[panelId];
   })();
 
   return (

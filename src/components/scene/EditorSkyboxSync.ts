@@ -2,7 +2,7 @@ import {
   createSkyboxManifest,
   layerToManifestLayer,
 } from "@/effects/skybox-manifest";
-import type { EffectLayer } from "@/effects/effect-layer";
+import { getEffectLayerAddon, type EffectLayer } from "@/effects/effect-layer";
 import type { SkyGeometryType } from "@/store/modules/scene";
 import type { EffectLayerBlendModePreview } from "@/store/modules/layers";
 import { Skybox } from "@/runtime/index";
@@ -27,42 +27,7 @@ function getEffectiveBlendMode(
 }
 
 function getLayerTopologyKey(layer: EffectLayer) {
-  if (layer.type === "gradient") {
-    return {
-      enabled: layer.enabled,
-      id: layer.id,
-      stopCount: layer.params.stops.length,
-      type: layer.type,
-    };
-  }
-
-  if (layer.type === "field-gradient") {
-    return {
-      anchorCount: layer.params.anchors.length,
-      enabled: layer.enabled,
-      id: layer.id,
-      type: layer.type,
-    };
-  }
-
-  if (layer.type === "spot") {
-    return {
-      enabled: layer.enabled,
-      id: layer.id,
-      stopCount: layer.params.stops.length,
-      type: layer.type,
-    };
-  }
-
-  return {
-    enabled: layer.enabled,
-    hasPlacement: Boolean(layer.params.placement),
-    hasSrc: Boolean(layer.params.src),
-    height: layer.params.height,
-    id: layer.id,
-    type: layer.type,
-    width: layer.params.width,
-  };
+  return getEffectLayerAddon(layer.type).runtime.getTopologyKey(layer as never);
 }
 
 function getTopologyKey(state: EditorSkyboxSyncState) {
@@ -163,19 +128,12 @@ export class EditorSkyboxSync {
 
       const manifestLayer = layerToManifestLayer(layer, nextState.previewBlendMode);
 
-      if (manifestLayer.type === "gradient") {
-        this.#options.skybox.updateGradientLayer(layer.id, manifestLayer.params);
-        changed = true;
-      } else if (manifestLayer.type === "field-gradient") {
-        this.#options.skybox.updateFieldGradientLayer(layer.id, manifestLayer.params);
-        changed = true;
-      } else if (manifestLayer.type === "spot") {
-        this.#options.skybox.updateSpotLayer(layer.id, manifestLayer.params);
-        changed = true;
-      } else {
-        this.#options.skybox.updateImageLayerPlacement(layer.id, manifestLayer.params.placement);
-        changed = true;
-      }
+      getEffectLayerAddon(layer.type).runtime.updateLayerParams(
+        this.#options.skybox,
+        layer as never,
+        manifestLayer as never
+      );
+      changed = true;
     });
 
     this.#previousState = nextState;

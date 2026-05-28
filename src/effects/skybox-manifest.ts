@@ -1,4 +1,4 @@
-import type { EffectLayer } from "@/effects/effect-layer";
+import { getEffectLayerAddon, type EffectLayer } from "@/effects/effect-layer";
 import type {
   SkyboxGeometryOptions,
   SkyboxManifestLayer,
@@ -10,92 +10,9 @@ export function layerToManifestLayer(
   layer: EffectLayer,
   previewBlendMode?: EffectLayerBlendModePreview | null
 ): SkyboxManifestLayer {
+  const addon = getEffectLayerAddon(layer.type);
   const blendMode =
     previewBlendMode?.layerId === layer.id ? previewBlendMode.blendMode : layer.blendMode;
-
-  if (layer.type === "gradient") {
-    return {
-      blendMode,
-      enabled: layer.enabled,
-      id: layer.id,
-      name: layer.name,
-      opacity: layer.opacity,
-      params: {
-        mode: layer.params.mode,
-        rotation: layer.params.rotation,
-        stops: layer.params.stops.map((stop) => ({
-          color: stop.color,
-          location: stop.location,
-          midpoint: stop.midpoint,
-          opacity: stop.opacity,
-        })),
-      },
-      type: "gradient",
-    };
-  }
-
-  if (layer.type === "field-gradient") {
-    return {
-      blendMode,
-      enabled: layer.enabled,
-      id: layer.id,
-      name: layer.name,
-      opacity: layer.opacity,
-      params: {
-        amplitude: layer.params.amplitude,
-        anchors: layer.params.anchors.map((anchor) => ({
-          color: anchor.color,
-          x: anchor.x,
-          y: anchor.y,
-        })),
-        frequency: layer.params.frequency,
-        mode: layer.params.mode,
-        power: layer.params.power,
-      },
-      type: "field-gradient",
-    };
-  }
-
-  if (layer.type === "spot") {
-    return {
-      blendMode,
-      enabled: layer.enabled,
-      id: layer.id,
-      name: layer.name,
-      opacity: layer.opacity,
-      params: {
-        angularRadius: layer.params.angularRadius,
-        baseAngularRadius: layer.params.baseAngularRadius,
-        brightness: layer.params.brightness,
-        centerDirection: layer.params.centerDirection,
-        colorMode: layer.params.colorMode,
-        coreRadius: layer.params.coreRadius,
-        coreSoftness: layer.params.coreSoftness,
-        dispersion: layer.params.dispersion,
-        dogSpread: layer.params.dogSpread,
-        dogStrength: layer.params.dogStrength,
-        dogStretch: layer.params.dogStretch,
-        glareSize: layer.params.glareSize,
-        glareStrength: layer.params.glareStrength,
-        glow: layer.params.glow,
-        glowSize: layer.params.glowSize,
-        glowStrength: layer.params.glowStrength,
-        halo: layer.params.halo,
-        haloInnerWidth: layer.params.haloInnerWidth,
-        haloOuterWidth: layer.params.haloOuterWidth,
-        haloRadius: layer.params.haloRadius,
-        haloStrength: layer.params.haloStrength,
-        lightColor: layer.params.lightColor,
-        stops: layer.params.stops.map((stop) => ({
-          color: stop.color,
-          location: stop.location,
-          midpoint: stop.midpoint,
-          opacity: stop.opacity,
-        })),
-      },
-      type: "spot",
-    };
-  }
 
   return {
     blendMode,
@@ -103,15 +20,9 @@ export function layerToManifestLayer(
     id: layer.id,
     name: layer.name,
     opacity: layer.opacity,
-    params: {
-      height: layer.params.height,
-      pixels: layer.params.pixels,
-      placement: layer.params.placement,
-      src: layer.params.src,
-      width: layer.params.width,
-    },
-    type: "image",
-  };
+    params: addon.toManifestParams(layer.params as never),
+    type: layer.type,
+  } as SkyboxManifestLayer;
 }
 
 export function createSkyboxManifest(

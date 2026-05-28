@@ -3,8 +3,29 @@ import {
   normalizeBlendMode,
   type EffectLayerBlendMode,
 } from "@/effects/blend-modes";
-import { normalizeImagePlacement } from "@/runtime/image-placement-transform";
-import { normalizeSpotParams } from "@/runtime/spot-transform";
+import type {
+  SkyboxFieldGradientParams,
+  SkyboxGradientParams,
+  SkyboxImageParams,
+  SkyboxManifestLayer,
+  Skybox,
+  SkyboxSpotParams,
+} from "@/runtime/index";
+import {
+  normalizeImagePlacement,
+  placementFromPosition,
+  placementFromRotation,
+  placementFromScale,
+  positionFromPlacement,
+  rotationFromPlacement,
+  scaleFromPlacement,
+  type Point2,
+} from "@/runtime/image-placement-transform";
+import {
+  normalizeSpotParams,
+  positionFromSpot,
+  spotFromPosition,
+} from "@/runtime/spot-transform";
 
 export type EffectLayerType = "gradient" | "field-gradient" | "image" | "spot";
 export type { EffectLayerBlendMode };
@@ -90,6 +111,63 @@ export type EffectLayerFocusTarget = {
   type: "direction";
 };
 
+export type EffectLayerIconName = "field-gradient" | "gradient" | "image" | "spot";
+export type EffectLayerSelectedStateKey = "fieldGradient" | "gradient" | "image" | "spot";
+
+export type Point3 = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type EffectLayerTransformKind =
+  | "2d-position"
+  | "3d-position"
+  | "rotation"
+  | "scale";
+
+export type EffectLayerTransformValueMap = {
+  "2d-position": Point2;
+  "3d-position": Point3;
+  rotation: number;
+  scale: Point2;
+};
+
+export type EffectLayerTransformCapability<TKind extends EffectLayerTransformKind> = {
+  read: (layer: EffectLayer) => EffectLayerTransformValueMap[TKind] | null;
+  write: (
+    layer: EffectLayer,
+    value: EffectLayerTransformValueMap[TKind]
+  ) => EffectLayer | null;
+};
+
+export type EffectLayerTransformCapabilities = Partial<{
+  [TKind in EffectLayerTransformKind]: EffectLayerTransformCapability<TKind>;
+}>;
+
+export type EffectLayerAddon<TType extends EffectLayerType = EffectLayerType, TParams = EffectLayer["params"]> = {
+  cloneParams: (params: TParams) => TParams;
+  displayName: string;
+  getDefaultName: (index: number) => string;
+  getFocusTarget?: (layer: Extract<EffectLayer, { type: TType }>) => EffectLayerFocusTarget | null;
+  iconName: EffectLayerIconName;
+  load: (serialized: { params: TParams; type: TType }) => TParams;
+  panelId: TType;
+  serialize: (params: TParams) => { params: TParams; type: TType };
+  selectedStateKey: EffectLayerSelectedStateKey;
+  toManifestParams: (params: TParams) => Extract<SkyboxManifestLayer, { type: TType }>["params"];
+  transformCapabilities?: EffectLayerTransformCapabilities;
+  runtime: {
+    getTopologyKey: (layer: Extract<EffectLayer, { type: TType }>) => unknown;
+    updateLayerParams: (
+      skybox: Skybox,
+      layer: Extract<EffectLayer, { type: TType }>,
+      manifestLayer: Extract<SkyboxManifestLayer, { type: TType }>
+    ) => void;
+  };
+  type: TType;
+};
+
 export type EffectLayerAdapter<TType extends EffectLayerType, TParams> = {
   getDefaultName: (index: number) => string;
   load: (serialized: { params: TParams; type: TType }) => TParams;
@@ -150,71 +228,332 @@ function isFiniteDirection(direction: [number, number, number]) {
   return direction.every(Number.isFinite) && direction.some((component) => component !== 0);
 }
 
-export function getEffectLayerFocusTarget(
-  layer: EffectLayer | undefined
-): EffectLayerFocusTarget | null {
-  if (
-    !layer ||
-    layer.type !== "image" ||
-    !layer.enabled ||
-    !layer.params.src ||
-    !layer.params.placement
-  ) {
-    return null;
-  }
-
-  const placement = normalizeImagePlacement(layer.params.placement);
-  const direction = placement.centerDirection;
-
-  if (!isFiniteDirection(direction)) {
-    return null;
-  }
-
+function manifestGradientParams(params: GradientState): SkyboxGradientParams {
   return {
-    direction,
-    type: "direction",
+    mode: params.mode,
+    rotation: params.rotation,
+    stops: params.stops.map((stop) => ({
+      color: stop.color,
+      location: stop.location,
+      midpoint: stop.midpoint,
+      opacity: stop.opacity,
+    })),
   };
 }
 
-export const gradientLayerAdapter: EffectLayerAdapter<"gradient", GradientState> = {
+function manifestFieldGradientParams(params: FieldGradientState): SkyboxFieldGradientParams {
+  return {
+    amplitude: params.amplitude,
+    anchors: params.anchors.map((anchor) => ({
+      color: anchor.color,
+      x: anchor.x,
+      y: anchor.y,
+    })),
+    frequency: params.frequency,
+    mode: params.mode,
+    power: params.power,
+  };
+}
+
+function manifestImageParams(params: ImageState): SkyboxImageParams {
+  return {
+    height: params.height,
+    pixels: params.pixels,
+    placement: params.placement,
+    src: params.src,
+    width: params.width,
+  };
+}
+
+function manifestSpotParams(params: SpotState): SkyboxSpotParams {
+  return {
+    angularRadius: params.angularRadius,
+    baseAngularRadius: params.baseAngularRadius,
+    brightness: params.brightness,
+    centerDirection: params.centerDirection,
+    colorMode: params.colorMode,
+    coreRadius: params.coreRadius,
+    coreSoftness: params.coreSoftness,
+    dispersion: params.dispersion,
+    dogSpread: params.dogSpread,
+    dogStrength: params.dogStrength,
+    dogStretch: params.dogStretch,
+    glareSize: params.glareSize,
+    glareStrength: params.glareStrength,
+    glow: params.glow,
+    glowSize: params.glowSize,
+    glowStrength: params.glowStrength,
+    halo: params.halo,
+    haloInnerWidth: params.haloInnerWidth,
+    haloOuterWidth: params.haloOuterWidth,
+    haloRadius: params.haloRadius,
+    haloStrength: params.haloStrength,
+    lightColor: params.lightColor,
+    stops: params.stops.map((stop) => ({
+      color: stop.color,
+      location: stop.location,
+      midpoint: stop.midpoint,
+      opacity: stop.opacity,
+    })),
+  };
+}
+
+export const gradientLayerAddon: EffectLayerAddon<"gradient", GradientState> = {
+  cloneParams: cloneGradientState,
+  displayName: "Gradient",
   getDefaultName: () => "Gradient",
+  iconName: "gradient",
   load: (serialized) => cloneGradientState(serialized.params),
+  panelId: "gradient",
   serialize: (params) => ({ params: cloneGradientState(params), type: "gradient" }),
+  selectedStateKey: "gradient",
+  toManifestParams: manifestGradientParams,
+  runtime: {
+    getTopologyKey: (layer) => ({
+      enabled: layer.enabled,
+      id: layer.id,
+      stopCount: layer.params.stops.length,
+      type: layer.type,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateGradientLayer(layer.id, manifestLayer.params);
+    },
+  },
+  transformCapabilities: {
+    rotation: {
+      read: (layer) => (layer.type === "gradient" ? layer.params.rotation : null),
+      write: (layer, value) =>
+        layer.type === "gradient"
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                rotation: value,
+              },
+            }
+          : null,
+    },
+  },
   type: "gradient",
 };
 
-export const fieldGradientLayerAdapter: EffectLayerAdapter<"field-gradient", FieldGradientState> = {
+export const fieldGradientLayerAddon: EffectLayerAddon<"field-gradient", FieldGradientState> = {
+  cloneParams: cloneFieldGradientState,
+  displayName: "Field Gradient",
   getDefaultName: () => "Field Gradient",
+  iconName: "field-gradient",
   load: (serialized) => cloneFieldGradientState(serialized.params),
+  panelId: "field-gradient",
   serialize: (params) => ({ params: cloneFieldGradientState(params), type: "field-gradient" }),
+  selectedStateKey: "fieldGradient",
+  toManifestParams: manifestFieldGradientParams,
+  runtime: {
+    getTopologyKey: (layer) => ({
+      anchorCount: layer.params.anchors.length,
+      enabled: layer.enabled,
+      id: layer.id,
+      type: layer.type,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateFieldGradientLayer(layer.id, manifestLayer.params);
+    },
+  },
   type: "field-gradient",
 };
 
-export const imageLayerAdapter: EffectLayerAdapter<"image", ImageState> = {
+export const imageLayerAddon: EffectLayerAddon<"image", ImageState> = {
+  cloneParams: cloneImageState,
+  displayName: "Image",
+  getFocusTarget: (layer) => {
+    if (!layer.enabled || !layer.params.src || !layer.params.placement) {
+      return null;
+    }
+
+    const placement = normalizeImagePlacement(layer.params.placement);
+    const direction = placement.centerDirection;
+
+    if (!isFiniteDirection(direction)) {
+      return null;
+    }
+
+    return {
+      direction,
+      type: "direction",
+    };
+  },
   getDefaultName: () => "Image",
+  iconName: "image",
   load: (serialized) => cloneImageState(serialized.params),
+  panelId: "image",
   serialize: (params) => ({ params: cloneImageState(params), type: "image" }),
+  selectedStateKey: "image",
+  toManifestParams: manifestImageParams,
+  runtime: {
+    getTopologyKey: (layer) => ({
+      enabled: layer.enabled,
+      hasPlacement: Boolean(layer.params.placement),
+      hasSrc: Boolean(layer.params.src),
+      height: layer.params.height,
+      id: layer.id,
+      type: layer.type,
+      width: layer.params.width,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateImageLayerPlacement(layer.id, manifestLayer.params.placement);
+    },
+  },
+  transformCapabilities: {
+    "2d-position": {
+      read: (layer) =>
+        layer.type === "image" && layer.params.placement
+          ? positionFromPlacement(layer.params.placement)
+          : null,
+      write: (layer, value) =>
+        layer.type === "image" && layer.params.placement
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                placement: placementFromPosition(layer.params.placement, value),
+              },
+            }
+          : null,
+    },
+    rotation: {
+      read: (layer) =>
+        layer.type === "image" && layer.params.placement
+          ? rotationFromPlacement(layer.params.placement)
+          : null,
+      write: (layer, value) =>
+        layer.type === "image" && layer.params.placement
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                placement: placementFromRotation(layer.params.placement, value),
+              },
+            }
+          : null,
+    },
+    scale: {
+      read: (layer) =>
+        layer.type === "image" && layer.params.placement
+          ? scaleFromPlacement(layer.params.placement)
+          : null,
+      write: (layer, value) =>
+        layer.type === "image" && layer.params.placement
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                placement: placementFromScale(layer.params.placement, value),
+              },
+            }
+          : null,
+    },
+  },
   type: "image",
 };
 
-export const spotLayerAdapter: EffectLayerAdapter<"spot", SpotState> = {
+export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
+  cloneParams: cloneSpotState,
+  displayName: "Spot",
   getDefaultName: () => "Spot",
+  iconName: "spot",
   load: (serialized) => cloneSpotState(serialized.params),
+  panelId: "spot",
   serialize: (params) => ({ params: cloneSpotState(params), type: "spot" }),
+  selectedStateKey: "spot",
+  toManifestParams: manifestSpotParams,
+  runtime: {
+    getTopologyKey: (layer) => ({
+      enabled: layer.enabled,
+      id: layer.id,
+      stopCount: layer.params.stops.length,
+      type: layer.type,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateSpotLayer(layer.id, manifestLayer.params);
+    },
+  },
+  transformCapabilities: {
+    "2d-position": {
+      read: (layer) => (layer.type === "spot" ? positionFromSpot(layer.params) : null),
+      write: (layer, value) =>
+        layer.type === "spot"
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                centerDirection: spotFromPosition(layer.params, value).centerDirection,
+              },
+            }
+          : null,
+    },
+  },
   type: "spot",
 };
 
+export const gradientLayerAdapter = gradientLayerAddon;
+export const fieldGradientLayerAdapter = fieldGradientLayerAddon;
+export const imageLayerAdapter = imageLayerAddon;
+export const spotLayerAdapter = spotLayerAddon;
+
+export const builtInEffectLayerAddons = [
+  gradientLayerAddon,
+  fieldGradientLayerAddon,
+  spotLayerAddon,
+  imageLayerAddon,
+] as const;
+
+const registeredEffectLayerAddons = new Map<EffectLayerType, EffectLayerAddon>();
+
+builtInEffectLayerAddons.forEach((addon) => {
+  registeredEffectLayerAddons.set(addon.type, addon as EffectLayerAddon);
+});
+
+export function registerEffectLayerAddon(addon: EffectLayerAddon) {
+  if (registeredEffectLayerAddons.has(addon.type)) {
+    throw new Error(`Effect layer addon "${addon.type}" is already registered.`);
+  }
+
+  registeredEffectLayerAddons.set(addon.type, addon);
+}
+
+export function getEffectLayerAddon(type: EffectLayerType) {
+  const addon = registeredEffectLayerAddons.get(type);
+
+  if (!addon) {
+    throw new Error(`Effect layer addon "${type}" is not registered.`);
+  }
+
+  return addon;
+}
+
+export function getEffectLayerAddons() {
+  return Array.from(registeredEffectLayerAddons.values());
+}
+
+export function cloneEffectLayerParams(layer: EffectLayer): EffectLayer["params"] {
+  return getEffectLayerAddon(layer.type).cloneParams(layer.params as never) as EffectLayer["params"];
+}
+
+export function getEffectLayerFocusTarget(
+  layer: EffectLayer | undefined
+): EffectLayerFocusTarget | null {
+  if (!layer) {
+    return null;
+  }
+
+  return getEffectLayerAddon(layer.type).getFocusTarget?.(layer as never) ?? null;
+}
+
 export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer {
+  const addon = getEffectLayerAddon(layer.type);
+
   return {
     blendMode: layer.blendMode,
-    effect:
-      layer.type === "gradient"
-        ? gradientLayerAdapter.serialize(layer.params)
-        : layer.type === "field-gradient"
-          ? fieldGradientLayerAdapter.serialize(layer.params)
-          : layer.type === "image"
-            ? imageLayerAdapter.serialize(layer.params)
-            : spotLayerAdapter.serialize(layer.params),
+    effect: addon.serialize(layer.params as never) as SerializedEffectLayer["effect"],
     enabled: layer.enabled,
     id: layer.id,
     locked: layer.locked,
@@ -224,53 +563,44 @@ export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer 
 }
 
 export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer {
-  if (serialized.effect.type === "gradient") {
-    return {
-      blendMode: normalizeBlendMode(serialized.blendMode),
-      enabled: serialized.enabled,
-      id: serialized.id,
-      locked: serialized.locked ?? false,
-      name: serialized.name,
-      opacity: serialized.opacity ?? 100,
-      params: gradientLayerAdapter.load(serialized.effect),
-      type: "gradient",
-    };
-  }
-
-  if (serialized.effect.type === "field-gradient") {
-    return {
-      blendMode: normalizeBlendMode(serialized.blendMode),
-      enabled: serialized.enabled,
-      id: serialized.id,
-      locked: serialized.locked ?? false,
-      name: serialized.name,
-      opacity: serialized.opacity ?? 100,
-      params: fieldGradientLayerAdapter.load(serialized.effect),
-      type: "field-gradient",
-    };
-  }
-
-  if (serialized.effect.type === "image") {
-    return {
-      blendMode: normalizeBlendMode(serialized.blendMode),
-      enabled: serialized.enabled,
-      id: serialized.id,
-      locked: serialized.locked ?? false,
-      name: serialized.name,
-      opacity: serialized.opacity ?? 100,
-      params: imageLayerAdapter.load(serialized.effect),
-      type: "image",
-    };
-  }
-
-  return {
+  const addon = getEffectLayerAddon(serialized.effect.type);
+  const baseLayer = {
     blendMode: normalizeBlendMode(serialized.blendMode),
     enabled: serialized.enabled,
     id: serialized.id,
     locked: serialized.locked ?? false,
     name: serialized.name,
     opacity: serialized.opacity ?? 100,
-    params: spotLayerAdapter.load(serialized.effect),
-    type: "spot",
+    type: serialized.effect.type,
+  };
+
+  if (serialized.effect.type === "gradient") {
+    return {
+      ...baseLayer,
+      params: addon.load(serialized.effect as never) as GradientState,
+      type: serialized.effect.type,
+    };
+  }
+
+  if (serialized.effect.type === "field-gradient") {
+    return {
+      ...baseLayer,
+      params: addon.load(serialized.effect as never) as FieldGradientState,
+      type: serialized.effect.type,
+    };
+  }
+
+  if (serialized.effect.type === "image") {
+    return {
+      ...baseLayer,
+      params: addon.load(serialized.effect as never) as ImageState,
+      type: serialized.effect.type,
+    };
+  }
+
+  return {
+    ...baseLayer,
+    params: addon.load(serialized.effect as never) as SpotState,
+    type: serialized.effect.type,
   };
 }

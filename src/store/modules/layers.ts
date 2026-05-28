@@ -2,10 +2,7 @@ import type { StateCreator } from "zustand";
 import type { Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
 import { reorderWithEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/reorder-with-edge";
 
-import {
-  applyEffectLayerModifier as applyEffectLayerModifierToLayer,
-  type EffectLayerModifier,
-} from "@/effects/effect-layer-interfaces";
+import type { EffectLayerModifier } from "@/effects/effect-layer-interfaces";
 import {
   cloneFieldGradientState,
   cloneGradientState,
@@ -14,10 +11,7 @@ import {
   type EffectLayer,
   type EffectLayerBlendMode,
   type EffectLayerType,
-  fieldGradientLayerAdapter,
-  gradientLayerAdapter,
-  imageLayerAdapter,
-  spotLayerAdapter,
+  getEffectLayerAddon,
 } from "@/effects/effect-layer";
 import type { HistoryParticipant, WorkspaceStore } from "@/store/app";
 import {
@@ -52,7 +46,6 @@ import {
   type SpotState,
 } from "@/store/modules/layer-spot";
 import {
-  clampPercent,
   cloneEffectLayer,
   getHistoryPatch,
   selectedLayerStatePatch,
@@ -60,6 +53,10 @@ import {
   type GradientStop,
   type HistoryUpdateOptions,
 } from "@/store/modules/layer-utils";
+import {
+  applyLayerOperationToState,
+  type LayerOperation,
+} from "@/store/modules/layer-operations";
 
 export { IMAGE_PLACEMENT_TRANSACTION_SCOPE };
 export type {
@@ -101,6 +98,7 @@ export type LayersSlice = {
   previewEffectLayerBlendMode: EffectLayerBlendModePreview | null;
   selectedLayerId: string;
   addEffectLayer: (type: EffectLayerType, options?: AddEffectLayerOptions) => void;
+  dispatchLayerOperation: (operation: LayerOperation, options?: HistoryUpdateOptions) => void;
   applyEffectLayerModifier: (
     id: string,
     modifier: EffectLayerModifier,
@@ -236,7 +234,7 @@ function createEffectLayer(
       enabled: true,
       id,
       locked: false,
-      name: gradientLayerAdapter.getDefaultName(index),
+      name: getEffectLayerAddon(type).getDefaultName(index),
       opacity: 100,
       params: createDefaultGradientState(),
       type,
@@ -249,7 +247,7 @@ function createEffectLayer(
       enabled: true,
       id,
       locked: false,
-      name: fieldGradientLayerAdapter.getDefaultName(index),
+      name: getEffectLayerAddon(type).getDefaultName(index),
       opacity: 100,
       params: createDefaultFieldGradientState(),
       type,
@@ -262,7 +260,7 @@ function createEffectLayer(
       enabled: true,
       id,
       locked: false,
-      name: spotLayerAdapter.getDefaultName(index),
+      name: getEffectLayerAddon(type).getDefaultName(index),
       opacity: 100,
       params: createDefaultSpotState(options.centerDirection),
       type,
@@ -274,7 +272,7 @@ function createEffectLayer(
     enabled: true,
     id,
     locked: false,
-    name: imageLayerAdapter.getDefaultName(index),
+    name: getEffectLayerAddon(type).getDefaultName(index),
     opacity: 100,
     params: createDefaultImageState(),
     type,
@@ -296,6 +294,8 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
   spot: initialSpot,
   previewEffectLayerBlendMode: null,
   selectedLayerId: "",
+  dispatchLayerOperation: (operation, options) =>
+    set((state) => applyLayerOperationToState(state, operation, options) ?? state),
   addEffectLayer: (type, options) =>
     set((state) => {
       const layerTypeCount = state.effectLayers.filter((layer) => layer.type === type).length + 1;
@@ -310,29 +310,13 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
       };
     }),
   applyEffectLayerModifier: (id, modifier, options) =>
-    set((state) => {
-      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
-
-      if (!layer) {
-        return state;
-      }
-
-      const nextLayer = applyEffectLayerModifierToLayer(layer, modifier);
-
-      if (!nextLayer) {
-        return state;
-      }
-
-      const normalizedNextLayer = cloneEffectLayer(nextLayer);
-
-      return {
-        effectLayers: state.effectLayers.map((effectLayer) =>
-          effectLayer.id === id ? normalizedNextLayer : effectLayer
-        ),
-        ...(state.selectedLayerId === id ? selectedLayerStatePatch(normalizedNextLayer) : {}),
-        ...getHistoryPatch(state, options),
-      };
-    }),
+    set((state) =>
+      applyLayerOperationToState(
+        state,
+        { layerId: id, modifier, type: "layer.apply-modifier" },
+        options
+      ) ?? state
+    ),
   clearPreviewEffectLayerBlendMode: () => set({ previewEffectLayerBlendMode: null }),
   deleteEffectLayer: (id) =>
     set((state) => {
@@ -419,21 +403,12 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
       };
     }),
   renameEffectLayer: (id, name) =>
-    set((state) => {
-      const trimmedName = name.trim();
-      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
-
-      if (!layer || !trimmedName || layer.name === trimmedName) {
-        return state;
-      }
-
-      return {
-        effectLayers: state.effectLayers.map((layer) =>
-          layer.id === id ? { ...layer, name: trimmedName } : layer
-        ),
-        ...getHistoryPatch(state),
-      };
-    }),
+    set((state) =>
+      applyLayerOperationToState(
+        state,
+        { layerId: id, type: "layer.update-common", update: { name } }
+      ) ?? state
+    ),
   selectEffectLayer: (id) =>
     set((state) => {
       const selectedLayer = state.effectLayers.find((layer) => layer.id === id);
@@ -449,36 +424,20 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
       };
     }),
   setEffectLayerBlendMode: (id, blendMode) =>
-    set((state) => {
-      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
-
-      if (!layer || layer.blendMode === blendMode) {
-        return state;
-      }
-
-      return {
-        effectLayers: state.effectLayers.map((effectLayer) =>
-          effectLayer.id === id ? { ...effectLayer, blendMode } : effectLayer
-        ),
-        ...getHistoryPatch(state),
-        previewEffectLayerBlendMode: null,
-      };
-    }),
+    set((state) => ({
+      ...(applyLayerOperationToState(
+        state,
+        { layerId: id, type: "layer.update-common", update: { blendMode } }
+      ) ?? state),
+      previewEffectLayerBlendMode: null,
+    })),
   setEffectLayerLocked: (id, locked) =>
-    set((state) => {
-      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
-
-      if (!layer || layer.locked === locked) {
-        return state;
-      }
-
-      return {
-        effectLayers: state.effectLayers.map((effectLayer) =>
-          effectLayer.id === id ? { ...effectLayer, locked } : effectLayer
-        ),
-        ...getHistoryPatch(state),
-      };
-    }),
+    set((state) =>
+      applyLayerOperationToState(
+        state,
+        { layerId: id, type: "layer.update-common", update: { locked } }
+      ) ?? state
+    ),
   setPreviewEffectLayerBlendMode: (layerId, blendMode) =>
     set((state) => {
       const layer = state.effectLayers.find((effectLayer) => effectLayer.id === layerId);
@@ -501,33 +460,27 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
       };
     }),
   setEffectLayerOpacity: (id, opacity, options) =>
-    set((state) => {
-      const nextOpacity = clampPercent(opacity);
-      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
-
-      if (!layer || layer.opacity === nextOpacity) {
-        return state;
-      }
-
-      return {
-        effectLayers: state.effectLayers.map((effectLayer) =>
-          effectLayer.id === id ? { ...effectLayer, opacity: nextOpacity } : effectLayer
-        ),
-        ...getHistoryPatch(state, options),
-      };
-    }),
+    set((state) =>
+      applyLayerOperationToState(
+        state,
+        { layerId: id, type: "layer.update-common", update: { opacity } },
+        options
+      ) ?? state
+    ),
   toggleEffectLayerEnabled: (id) =>
     set((state) => {
-      if (!state.effectLayers.some((layer) => layer.id === id)) {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === id);
+
+      if (!layer) {
         return state;
       }
 
-      return {
-        effectLayers: state.effectLayers.map((layer) =>
-          layer.id === id ? { ...layer, enabled: !layer.enabled } : layer
-        ),
-        ...getHistoryPatch(state),
-      };
+      return (
+        applyLayerOperationToState(
+          state,
+          { layerId: id, type: "layer.update-common", update: { enabled: !layer.enabled } }
+        ) ?? state
+      );
     }),
   ...createFieldGradientLayerActions(set),
   ...createGradientLayerActions(set),

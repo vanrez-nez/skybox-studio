@@ -41,29 +41,26 @@ import { SliderInput } from "@/components/ui/composables/slider-input";
 import { Widget } from "../panels/Widget";
 import { BLEND_MODE_GROUPS } from "@/effects/blend-modes";
 import {
+  getEffectLayerAddon,
+  getEffectLayerAddons,
   getEffectLayerFocusTarget,
   type EffectLayer,
   type EffectLayerBlendMode,
-  type EffectLayerType,
+  type EffectLayerIconName,
 } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
 
 const LAYER_DRAG_TYPE = "effect-layer";
-function getLayerIcon(type: EffectLayerType) {
-  if (type === "gradient") {
-    return Palette;
-  }
+const LAYER_ICONS = {
+  "field-gradient": Sparkles,
+  gradient: Palette,
+  image: ImagePlus,
+  spot: CircleDot,
+} satisfies Record<EffectLayerIconName, typeof Palette>;
 
-  if (type === "field-gradient") {
-    return Sparkles;
-  }
-
-  if (type === "spot") {
-    return CircleDot;
-  }
-
-  return ImagePlus;
+function getLayerIcon(layer: EffectLayer) {
+  return LAYER_ICONS[getEffectLayerAddon(layer.type).iconName];
 }
 
 function isLayerDragData(data: Record<string, unknown>): data is {
@@ -117,7 +114,7 @@ function LayerRow({
   const editingInputRef = useRef<HTMLInputElement>(null);
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const LayerIcon = getLayerIcon(layer.type);
+  const LayerIcon = getLayerIcon(layer);
   const isEditing = layer.id === editingLayerId;
 
   useEffect(() => {
@@ -547,28 +544,26 @@ export function LayersWidget() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuGroup>
-                <DropdownMenuItem onSelect={() => addEffectLayer("gradient")}>
-                  <Palette />
-                  Gradient
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => addEffectLayer("field-gradient")}>
-                  <Sparkles />
-                  Field Gradient
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
-                    addEffectLayer("spot", {
-                      centerDirection: useWorkspaceStore.getState().sceneLookDirection,
-                    })
-                  }
-                >
-                  <CircleDot />
-                  Spot
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => addEffectLayer("image")}>
-                  <ImagePlus />
-                  Image
-                </DropdownMenuItem>
+                {getEffectLayerAddons().map((addon) => {
+                  const AddonIcon = LAYER_ICONS[addon.iconName];
+
+                  return (
+                    <DropdownMenuItem
+                      key={addon.type}
+                      onSelect={() =>
+                        addEffectLayer(
+                          addon.type,
+                          addon.type === "spot"
+                            ? { centerDirection: useWorkspaceStore.getState().sceneLookDirection }
+                            : undefined
+                        )
+                      }
+                    >
+                      <AddonIcon />
+                      {addon.displayName}
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>

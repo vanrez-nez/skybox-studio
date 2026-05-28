@@ -1,36 +1,15 @@
-import type { EffectLayer } from "@/effects/effect-layer";
 import {
-  placementFromPosition,
-  placementFromRotation,
-  placementFromScale,
-  positionFromPlacement,
-  rotationFromPlacement,
-  scaleFromPlacement,
-  type Point2,
-} from "@/runtime/image-placement-transform";
-import {
-  positionFromSpot,
-  spotFromPosition,
-} from "@/runtime/spot-transform";
+  getEffectLayerAddon,
+  type EffectLayer,
+  type EffectLayerTransformCapability,
+  type EffectLayerTransformKind,
+  type EffectLayerTransformValueMap,
+  type Point3,
+} from "@/effects/effect-layer";
+import type { Point2 } from "@/runtime/image-placement-transform";
 
-export type Point3 = {
-  x: number;
-  y: number;
-  z: number;
-};
-
-export type EffectLayerInterfaceKind =
-  | "2d-position"
-  | "3d-position"
-  | "rotation"
-  | "scale";
-
-export type EffectLayerInterfaceValueMap = {
-  "2d-position": Point2;
-  "3d-position": Point3;
-  rotation: number;
-  scale: Point2;
-};
+export type EffectLayerInterfaceKind = EffectLayerTransformKind;
+export type EffectLayerInterfaceValueMap = EffectLayerTransformValueMap;
 
 export type EffectLayerTransformInterface<TKind extends EffectLayerInterfaceKind> = {
   kind: TKind;
@@ -86,135 +65,34 @@ function point3Equals(first: Point3, second: Point3) {
   return first.x === second.x && first.y === second.y && first.z === second.z;
 }
 
-export const effectLayer2DPositionInterface: EffectLayerTransformInterface<"2d-position"> = {
-  kind: "2d-position",
-  read: (layer) => {
-    if (layer.type === "image" && layer.params.placement) {
-      return positionFromPlacement(layer.params.placement);
-    }
-
-    if (layer.type === "spot") {
-      return positionFromSpot(layer.params);
-    }
-
-    return null;
-  },
-  write: (layer, value) => {
-    if (layer.type === "image" && layer.params.placement) {
-      return {
-        ...layer,
-        params: {
-          ...layer.params,
-          placement: placementFromPosition(layer.params.placement, value),
-        },
-      };
-    }
-
-    if (layer.type === "spot") {
-      return {
-        ...layer,
-        params: {
-          ...layer.params,
-          centerDirection: spotFromPosition(layer.params, value).centerDirection,
-        },
-      };
-    }
-
-    return null;
-  },
-};
-
-export const effectLayer3DPositionInterface: EffectLayerTransformInterface<"3d-position"> = {
-  kind: "3d-position",
-  read: () => null,
-  write: () => null,
-};
-
-export const effectLayerRotationInterface: EffectLayerTransformInterface<"rotation"> = {
-  kind: "rotation",
-  read: (layer) => {
-    if (layer.type === "image" && layer.params.placement) {
-      return rotationFromPlacement(layer.params.placement);
-    }
-
-    if (layer.type === "gradient") {
-      return layer.params.rotation;
-    }
-
-    return null;
-  },
-  write: (layer, value) => {
-    if (layer.type === "image" && layer.params.placement) {
-      return {
-        ...layer,
-        params: {
-          ...layer.params,
-          placement: placementFromRotation(layer.params.placement, value),
-        },
-      };
-    }
-
-    if (layer.type === "gradient") {
-      return {
-        ...layer,
-        params: {
-          ...layer.params,
-          rotation: value,
-        },
-      };
-    }
-
-    return null;
-  },
-};
-
-export const effectLayerScaleInterface: EffectLayerTransformInterface<"scale"> = {
-  kind: "scale",
-  read: (layer) => {
-    if (layer.type === "image" && layer.params.placement) {
-      return scaleFromPlacement(layer.params.placement);
-    }
-
-    return null;
-  },
-  write: (layer, value) => {
-    if (layer.type === "image" && layer.params.placement) {
-      return {
-        ...layer,
-        params: {
-          ...layer.params,
-          placement: placementFromScale(layer.params.placement, value),
-        },
-      };
-    }
-
-    return null;
-  },
-};
-
-export const effectLayerTransformInterfaces = {
-  "2d-position": effectLayer2DPositionInterface,
-  "3d-position": effectLayer3DPositionInterface,
-  rotation: effectLayerRotationInterface,
-  scale: effectLayerScaleInterface,
-};
+function getAddonTransformCapability<TKind extends EffectLayerInterfaceKind>(
+  layer: EffectLayer,
+  kind: TKind
+): EffectLayerTransformCapability<TKind> | null {
+  return (getEffectLayerAddon(layer.type).transformCapabilities?.[kind] ??
+    null) as EffectLayerTransformCapability<TKind> | null;
+}
 
 export function readEffectLayerInterface<TKind extends EffectLayerInterfaceKind>(
   layer: EffectLayer,
   kind: TKind
 ): EffectLayerInterfaceValueMap[TKind] | null {
-  return effectLayerTransformInterfaces[kind].read(layer) as
-    | EffectLayerInterfaceValueMap[TKind]
-    | null;
+  return getAddonTransformCapability(layer, kind)?.read(layer) ?? null;
 }
 
 export function getEffectLayerInterface<TKind extends EffectLayerInterfaceKind>(
   layer: EffectLayer,
   kind: TKind
 ): EffectLayerTransformInterface<TKind> | null {
-  return readEffectLayerInterface(layer, kind) === null
+  const capability = getAddonTransformCapability(layer, kind);
+
+  return !capability || capability.read(layer) === null
     ? null
-    : (effectLayerTransformInterfaces[kind] as unknown as EffectLayerTransformInterface<TKind>);
+    : {
+        kind,
+        read: capability.read,
+        write: capability.write,
+      };
 }
 
 export function writeEffectLayerInterface<TKind extends EffectLayerInterfaceKind>(
@@ -222,7 +100,7 @@ export function writeEffectLayerInterface<TKind extends EffectLayerInterfaceKind
   kind: TKind,
   value: EffectLayerInterfaceValueMap[TKind]
 ): EffectLayer | null {
-  return effectLayerTransformInterfaces[kind].write(layer, value as never);
+  return getAddonTransformCapability(layer, kind)?.write(layer, value as never) ?? null;
 }
 
 export function applyEffectLayerModifier(
@@ -230,7 +108,7 @@ export function applyEffectLayerModifier(
   modifier: EffectLayerModifier
 ): EffectLayer | null {
   if (modifier.interface === "2d-position") {
-    const currentValue = effectLayer2DPositionInterface.read(layer);
+    const currentValue = readEffectLayerInterface(layer, "2d-position");
 
     if (!currentValue) {
       return null;
@@ -246,11 +124,11 @@ export function applyEffectLayerModifier(
 
     return point2Equals(currentValue, nextValue)
       ? null
-      : effectLayer2DPositionInterface.write(layer, nextValue);
+      : writeEffectLayerInterface(layer, "2d-position", nextValue);
   }
 
   if (modifier.interface === "3d-position") {
-    const currentValue = effectLayer3DPositionInterface.read(layer);
+    const currentValue = readEffectLayerInterface(layer, "3d-position");
 
     if (!currentValue) {
       return null;
@@ -267,11 +145,11 @@ export function applyEffectLayerModifier(
 
     return point3Equals(currentValue, nextValue)
       ? null
-      : effectLayer3DPositionInterface.write(layer, nextValue);
+      : writeEffectLayerInterface(layer, "3d-position", nextValue);
   }
 
   if (modifier.interface === "rotation") {
-    const currentValue = effectLayerRotationInterface.read(layer);
+    const currentValue = readEffectLayerInterface(layer, "rotation");
 
     if (currentValue === null) {
       return null;
@@ -282,10 +160,10 @@ export function applyEffectLayerModifier(
 
     return currentValue === nextValue
       ? null
-      : effectLayerRotationInterface.write(layer, nextValue);
+      : writeEffectLayerInterface(layer, "rotation", nextValue);
   }
 
-  const currentValue = effectLayerScaleInterface.read(layer);
+  const currentValue = readEffectLayerInterface(layer, "scale");
 
   if (!currentValue) {
     return null;
@@ -293,5 +171,5 @@ export function applyEffectLayerModifier(
 
   return point2Equals(currentValue, modifier.value)
     ? null
-    : effectLayerScaleInterface.write(layer, modifier.value);
+    : writeEffectLayerInterface(layer, "scale", modifier.value);
 }

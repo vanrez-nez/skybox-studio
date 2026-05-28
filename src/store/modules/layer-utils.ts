@@ -1,10 +1,12 @@
 import type { StateCreator } from "zustand";
 
 import {
+  cloneEffectLayerParams,
   cloneFieldGradientState,
   cloneGradientState,
   cloneImageState,
   cloneSpotState,
+  getEffectLayerAddon,
   type EffectLayer,
 } from "@/effects/effect-layer";
 import type { WorkspaceStore } from "@/store/app";
@@ -52,47 +54,18 @@ export function clampRange(value: number, min: number, max: number) {
 }
 
 export function cloneEffectLayer(layer: EffectLayer): EffectLayer {
-  if (layer.type === "gradient") {
-    return {
-      ...layer,
-      params: cloneGradientState(layer.params),
-    };
-  }
-
-  if (layer.type === "field-gradient") {
-    return {
-      ...layer,
-      params: cloneFieldGradientState(layer.params),
-    };
-  }
-
-  if (layer.type === "spot") {
-    return {
-      ...layer,
-      params: cloneSpotState(layer.params),
-    };
-  }
-
   return {
     ...layer,
-    params: cloneImageState(layer.params),
+    params: cloneEffectLayerParams(layer) as never,
   };
 }
 
 export function selectedLayerStatePatch(layer: EffectLayer) {
-  if (layer.type === "gradient") {
-    return { gradient: cloneGradientState(layer.params) };
-  }
+  const addon = getEffectLayerAddon(layer.type);
 
-  if (layer.type === "field-gradient") {
-    return { fieldGradient: cloneFieldGradientState(layer.params) };
-  }
-
-  if (layer.type === "spot") {
-    return { spot: cloneSpotState(layer.params) };
-  }
-
-  return { image: cloneImageState(layer.params) };
+  return {
+    [addon.selectedStateKey]: cloneEffectLayerParams(layer),
+  };
 }
 
 export function getHistoryPatch(state: WorkspaceStore, options?: HistoryUpdateOptions) {

@@ -39,7 +39,7 @@ function randomHexColor() {
   ).join("")}`;
 }
 
-function createRandomFieldAnchors(count: number) {
+export function createRandomFieldAnchors(count: number) {
   return Array.from({ length: count }, (_, index) => ({
     color: randomHexColor(),
     id: `field-${Date.now()}-${index}`,

@@ -3,6 +3,7 @@ import { GradientWidget } from "@/components/sidebar/panels/GradientWidget";
 import { ImageWidget } from "@/components/sidebar/panels/ImageWidget";
 import { LayersWidget } from "@/components/sidebar/layers/LayersWidget";
 import { SpotWidget } from "@/components/sidebar/panels/SpotWidget";
+import { StarfieldWidget } from "@/components/sidebar/panels/StarfieldWidget";
 import { getEffectLayerAddon } from "@/effects/effect-layer";
 import { useWorkspaceStore } from "@/store/app";
 
@@ -23,6 +24,7 @@ export function WorkspaceSidebar() {
       gradient: <GradientWidget />,
       image: <ImageWidget />,
       spot: <SpotWidget />,
+      starfield: <StarfieldWidget />,
     }[panelId];
   })();
 

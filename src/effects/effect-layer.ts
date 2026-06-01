@@ -1,4 +1,10 @@
-import type { FieldGradientState, GradientState, ImageState, SpotState } from "@/store/modules/layers";
+import type {
+  FieldGradientState,
+  GradientState,
+  ImageState,
+  SpotState,
+  StarfieldState,
+} from "@/store/modules/layers";
 import {
   normalizeBlendMode,
   type EffectLayerBlendMode,
@@ -10,6 +16,7 @@ import type {
   SkyboxManifestLayer,
   Skybox,
   SkyboxSpotParams,
+  SkyboxStarfieldParams,
 } from "@/runtime/index";
 import {
   normalizeImagePlacement,
@@ -26,8 +33,9 @@ import {
   positionFromSpot,
   spotFromPosition,
 } from "@/runtime/spot-transform";
+import { normalizeStarfieldParams } from "@/runtime/starfield-static";
 
-export type EffectLayerType = "gradient" | "field-gradient" | "image" | "spot";
+export type EffectLayerType = "gradient" | "field-gradient" | "image" | "spot" | "starfield";
 export type { EffectLayerBlendMode };
 
 export type SerializedGradientEffect = {
@@ -50,13 +58,19 @@ export type SerializedSpotEffect = {
   type: "spot";
 };
 
+export type SerializedStarfieldEffect = {
+  params: StarfieldState;
+  type: "starfield";
+};
+
 export type SerializedEffectLayer = {
   blendMode?: EffectLayerBlendMode;
   effect:
     | SerializedGradientEffect
     | SerializedFieldGradientEffect
     | SerializedImageEffect
-    | SerializedSpotEffect;
+    | SerializedSpotEffect
+    | SerializedStarfieldEffect;
   enabled: boolean;
   id: string;
   locked?: boolean;
@@ -104,6 +118,16 @@ export type EffectLayer =
       opacity: number;
       params: SpotState;
       type: "spot";
+    }
+  | {
+      blendMode: EffectLayerBlendMode;
+      enabled: boolean;
+      id: string;
+      locked: boolean;
+      name: string;
+      opacity: number;
+      params: StarfieldState;
+      type: "starfield";
     };
 
 export type EffectLayerFocusTarget = {
@@ -111,8 +135,13 @@ export type EffectLayerFocusTarget = {
   type: "direction";
 };
 
-export type EffectLayerIconName = "field-gradient" | "gradient" | "image" | "spot";
-export type EffectLayerSelectedStateKey = "fieldGradient" | "gradient" | "image" | "spot";
+export type EffectLayerIconName = "field-gradient" | "gradient" | "image" | "spot" | "starfield";
+export type EffectLayerSelectedStateKey =
+  | "fieldGradient"
+  | "gradient"
+  | "image"
+  | "spot"
+  | "starfield";
 
 export type Point3 = {
   x: number;
@@ -224,6 +253,28 @@ export function cloneSpotState(spot: SpotState): SpotState {
   };
 }
 
+export function cloneStarfieldState(starfield: StarfieldState): StarfieldState {
+  const normalized = normalizeStarfieldParams(starfield);
+  const sourceAnchors = starfield.nebulaField?.anchors ?? [];
+  const anchors = normalized.nebulaField.anchors.map((anchor, index) => ({
+    ...anchor,
+    id: sourceAnchors[index]?.id ?? `starfield-field-${index}`,
+  }));
+
+  return {
+    ...normalized,
+    nebulaField: {
+      ...normalized.nebulaField,
+      anchors,
+      selectedAnchorId:
+        starfield.nebulaField?.selectedAnchorId &&
+        anchors.some((anchor) => anchor.id === starfield.nebulaField.selectedAnchorId)
+          ? starfield.nebulaField.selectedAnchorId
+          : anchors[0]?.id ?? "starfield-field-0",
+    },
+  };
+}
+
 function isFiniteDirection(direction: [number, number, number]) {
   return direction.every(Number.isFinite) && direction.some((component) => component !== 0);
 }
@@ -296,6 +347,27 @@ function manifestSpotParams(params: SpotState): SkyboxSpotParams {
       opacity: stop.opacity,
     })),
   };
+}
+
+function manifestStarfieldParams(params: StarfieldState): SkyboxStarfieldParams {
+  const starfield = cloneStarfieldState(params);
+
+  return normalizeStarfieldParams({
+    clip: starfield.clip,
+    nebula: starfield.nebula,
+    nebulaField: {
+      amplitude: starfield.nebulaField.amplitude,
+      anchors: starfield.nebulaField.anchors.map((anchor) => ({
+        color: anchor.color,
+        x: anchor.x,
+        y: anchor.y,
+      })),
+      frequency: starfield.nebulaField.frequency,
+      mode: starfield.nebulaField.mode,
+      power: starfield.nebulaField.power,
+    },
+    stars: starfield.stars,
+  });
 }
 
 export const gradientLayerAddon: EffectLayerAddon<"gradient", GradientState> = {
@@ -494,16 +566,41 @@ export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
   type: "spot",
 };
 
+export const starfieldLayerAddon: EffectLayerAddon<"starfield", StarfieldState> = {
+  cloneParams: cloneStarfieldState,
+  displayName: "Starfield",
+  getDefaultName: () => "Starfield",
+  iconName: "starfield",
+  load: (serialized) => cloneStarfieldState(serialized.params),
+  panelId: "starfield",
+  serialize: (params) => ({ params: cloneStarfieldState(params), type: "starfield" }),
+  selectedStateKey: "starfield",
+  toManifestParams: manifestStarfieldParams,
+  runtime: {
+    getTopologyKey: (layer) => ({
+      enabled: layer.enabled,
+      id: layer.id,
+      type: layer.type,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateStarfieldLayer(layer.id, manifestLayer.params);
+    },
+  },
+  type: "starfield",
+};
+
 export const gradientLayerAdapter = gradientLayerAddon;
 export const fieldGradientLayerAdapter = fieldGradientLayerAddon;
 export const imageLayerAdapter = imageLayerAddon;
 export const spotLayerAdapter = spotLayerAddon;
+export const starfieldLayerAdapter = starfieldLayerAddon;
 
 export const builtInEffectLayerAddons = [
   gradientLayerAddon,
   fieldGradientLayerAddon,
   spotLayerAddon,
   imageLayerAddon,
+  starfieldLayerAddon,
 ] as const;
 
 const registeredEffectLayerAddons = new Map<EffectLayerType, EffectLayerAddon>();
@@ -594,6 +691,14 @@ export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer 
     return {
       ...baseLayer,
       params: addon.load(serialized.effect as never) as ImageState,
+      type: serialized.effect.type,
+    };
+  }
+
+  if (serialized.effect.type === "starfield") {
+    return {
+      ...baseLayer,
+      params: addon.load(serialized.effect as never) as StarfieldState,
       type: serialized.effect.type,
     };
   }

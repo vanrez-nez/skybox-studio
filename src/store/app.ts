@@ -9,6 +9,10 @@ import {
   type ImageState,
   type LayersSlice,
 } from "@/store/modules/layers";
+import {
+  cloneStarfieldState,
+  type StarfieldState,
+} from "@/store/modules/layer-starfield";
 import { createSceneSlice, type SceneSlice } from "@/store/modules/scene";
 
 export type HistorySnapshot = Record<string, unknown>;
@@ -57,6 +61,7 @@ type PersistedWorkspacePreferences = Pick<
   | "showOrientationGizmo"
   | "showSkyGeometry"
   | "spot"
+  | "starfield"
 >;
 
 let isStorageHistoryTransactionActive = false;
@@ -101,6 +106,14 @@ function normalizeEffectLayerLockState(effectLayers: WorkspaceStore["effectLayer
     ...layer,
     locked: layer.locked ?? false,
   }));
+}
+
+function hydrateSelectedStarfieldState(state: WorkspaceStore): StarfieldState {
+  const selectedLayer = state.effectLayers.find((layer) => layer.id === state.selectedLayerId);
+
+  return selectedLayer?.type === "starfield"
+    ? cloneStarfieldState(selectedLayer.params as StarfieldState)
+    : state.starfield;
 }
 
 function beginStorageHistoryTransaction() {
@@ -323,16 +336,22 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         showOrientationGizmo: state.showOrientationGizmo,
         showSkyGeometry: state.showSkyGeometry,
         spot: state.spot,
+        starfield: state.starfield,
       }),
       merge: (persistedState, currentState) => {
         const nextState = {
           ...currentState,
           ...(persistedState as Partial<PersistedWorkspacePreferences>),
         };
+        const effectLayers = normalizeEffectLayerLockState(nextState.effectLayers);
+        const normalizedState = {
+          ...nextState,
+          effectLayers,
+        } as WorkspaceStore;
 
         return {
-          ...nextState,
-          effectLayers: normalizeEffectLayerLockState(nextState.effectLayers),
+          ...normalizedState,
+          starfield: hydrateSelectedStarfieldState(normalizedState),
         };
       },
       storage: createTransactionAwareSessionStorage<PersistedWorkspacePreferences>(),

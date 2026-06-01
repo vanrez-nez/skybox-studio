@@ -18,6 +18,7 @@ import {
   normalizeVector,
   projectDirectionToImageUv,
   Skybox,
+  starfieldClipContainsDirection,
   spotContainsDirection,
 } from "@/runtime/index";
 import { SkyboxOrbitControls } from "./SkyboxOrbitControls";
@@ -265,9 +266,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     let pendingImagePlacementFrame: number | null = null;
     const liveSkybox = new Skybox()
       .setRenderer(renderer)
-      .fromManifest(initialSkyboxManifest)
-      .setEditorPresentationEnabled(true)
-      .load();
+      .fromManifest(initialSkyboxManifest);
     const skyGeometry = new THREE.LineSegments(
       createSkyboxWireGeometry({ type: currentSkyGeometryType }),
       new THREE.LineBasicMaterial({
@@ -341,6 +340,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     renderRef.current = render;
+    liveSkybox.addEventListener("starfieldtexturechange" as never, render);
     setSkyGeometryVisibleRef.current = (visible) => {
       skyGeometry.visible = visible;
       render();
@@ -821,6 +821,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           continue;
         }
 
+        if (layer.type === "starfield") {
+          if (starfieldClipContainsDirection(direction, layer.params.clip)) {
+            hits.push({ layerId: layer.id, type: layer.type });
+          }
+          continue;
+        }
+
         if (layer.type !== "image") {
           hits.push({ layerId: layer.id, type: layer.type });
           continue;
@@ -1208,6 +1215,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       rendererReady = true;
+      liveSkybox.setEditorPresentationEnabled(true);
       syncSkybox();
       resize();
     });
@@ -1238,6 +1246,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       canvas.removeEventListener("pointerup", releaseScenePointer);
       canvas.removeEventListener("pointercancel", releaseScenePointer);
       canvas.removeEventListener("lostpointercapture", releaseScenePointer);
+      liveSkybox.removeEventListener("starfieldtexturechange" as never, render);
       resizeObserver.disconnect();
       imageTextureRecords.forEach((record) => record.texture.dispose());
       imageTextureRecords.clear();

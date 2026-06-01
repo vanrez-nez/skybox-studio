@@ -6,11 +6,20 @@ import {
   type SkyboxManifestLayer,
   type SkyboxManifestNode,
   type SkyboxManifestV2,
+  type StarfieldBakeData,
 } from "@/runtime/index";
+
+export type TextureBakeStarfieldBake = {
+  data: ArrayBuffer;
+  height: number;
+  layerId: string;
+  width: number;
+};
 
 export type TextureBakeWorkerRequest = {
   id: number;
   manifest: SkyboxManifest;
+  starfieldBakes?: TextureBakeStarfieldBake[];
   width?: number;
 };
 
@@ -97,6 +106,18 @@ workerSelf.onmessage = (event: MessageEvent<TextureBakeWorkerRequest>) => {
       const manifest = await resolveManifestImages(event.data.manifest);
       const bakedImage = bakeSkyboxImageData(manifest, {
         cache: false,
+        starfieldBakes: event.data.starfieldBakes
+          ? new Map<string, StarfieldBakeData>(
+              event.data.starfieldBakes.map((bake) => [
+                bake.layerId,
+                {
+                  data: new Uint8ClampedArray(bake.data) as Uint8ClampedArray<ArrayBuffer>,
+                  height: bake.height,
+                  width: bake.width,
+                },
+              ])
+            )
+          : undefined,
         width: event.data.width,
       });
       const data = bakedImage.data.buffer;

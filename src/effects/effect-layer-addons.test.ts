@@ -24,6 +24,7 @@ describe("effect layer addons", () => {
       "field-gradient",
       "spot",
       "image",
+      "starfield",
     ]);
   });
 

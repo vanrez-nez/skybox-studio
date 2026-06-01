@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import * as THREE from "three/webgpu";
 
 import { Button } from "@/components/ui/primitives/button";
 import { Input } from "@/components/ui/primitives/input";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
-import type { TextureBakeWorkerResponse } from "@/processes/texture-baking.worker";
+import type {
+  TextureBakeStarfieldBake,
+  TextureBakeWorkerResponse,
+} from "@/processes/texture-baking.worker";
+import {
+  createStarfieldGpuBakeService,
+  migrateManifestToV2,
+  type SkyboxManifest,
+  type SkyboxManifestNode,
+} from "@/runtime/index";
 import { useWorkspaceStore } from "@/store/app";
 
 const DEFAULT_EXPORT_WIDTH = 2048;
@@ -66,6 +76,78 @@ function encodeImageDataAsPng(data: ArrayBuffer, width: number, height: number) 
       reject(new Error("PNG export could not be created."));
     }, "image/png");
   });
+}
+
+function collectStarfieldLayers(
+  nodes: SkyboxManifestNode[],
+  layers: Extract<SkyboxManifestNode, { type: "starfield" }>[] = []
+) {
+  nodes.forEach((node) => {
+    if (!node.enabled) {
+      return;
+    }
+
+    if (node.type === "group") {
+      collectStarfieldLayers(node.children, layers);
+      return;
+    }
+
+    if (node.type === "starfield") {
+      layers.push(node);
+    }
+  });
+
+  return layers;
+}
+
+async function createGpuStarfieldExportBakes(
+  manifest: SkyboxManifest,
+  width: number
+): Promise<TextureBakeStarfieldBake[] | undefined> {
+  const starfieldLayers = collectStarfieldLayers(migrateManifestToV2(manifest).nodes);
+
+  if (starfieldLayers.length === 0) {
+    return undefined;
+  }
+
+  const canvas = document.createElement("canvas");
+  const renderer = new THREE.WebGPURenderer({
+    alpha: true,
+    antialias: false,
+    canvas,
+  });
+
+  canvas.width = width;
+  canvas.height = Math.floor(width / 2);
+  await renderer.init();
+
+  const bakeService = createStarfieldGpuBakeService(renderer);
+
+  if (!bakeService) {
+    renderer.dispose();
+    throw new Error("GPU Starfield export bake is not available.");
+  }
+
+  try {
+    const bakes = await Promise.all(
+      starfieldLayers.map(async (layer) => {
+        const key = bakeService.createBakeKey(layer.params, width);
+        const bake = await bakeService.bakeImageData(layer.params, key, width);
+
+        return {
+          data: bake.data.buffer,
+          height: bake.height,
+          layerId: layer.id,
+          width: bake.width,
+        };
+      })
+    );
+
+    return bakes;
+  } finally {
+    bakeService.dispose();
+    renderer.dispose();
+  }
 }
 
 export function BakePreview() {
@@ -175,11 +257,37 @@ export function BakePreview() {
       setPngBlob(null);
       setPreviewUrl(null);
       setStatus("loading");
-      worker.postMessage({
-        id,
-        manifest,
-        width: exportWidth,
-      });
+      void (async () => {
+        try {
+          const starfieldBakes = await createGpuStarfieldExportBakes(manifest, exportWidth);
+
+          if (id !== requestIdRef.current) {
+            return;
+          }
+
+          worker.postMessage(
+            {
+              id,
+              manifest,
+              starfieldBakes,
+              width: exportWidth,
+            },
+            starfieldBakes?.map((bake) => bake.data) ?? []
+          );
+        } catch (nextError) {
+          if (id !== requestIdRef.current) {
+            return;
+          }
+
+          clearPreviewUrl();
+          setPngBlob(null);
+          setPreviewUrl(null);
+          setError(
+            nextError instanceof Error ? nextError.message : "GPU Starfield export bake failed."
+          );
+          setStatus("error");
+        }
+      })();
     }, 200);
 
     return () => {

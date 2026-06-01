@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { Blend, CircleDot, Ellipsis, Eye, EyeOff, Focus, ImagePlus, Lock, LockOpen, Palette, Sparkles, Trash2 } from "lucide-react";
+import { Blend, CircleDot, Ellipsis, Eye, EyeOff, Focus, ImagePlus, Lock, LockOpen, Palette, Sparkles, Stars, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -57,6 +57,7 @@ const LAYER_ICONS = {
   gradient: Palette,
   image: ImagePlus,
   spot: CircleDot,
+  starfield: Stars,
 } satisfies Record<EffectLayerIconName, typeof Palette>;
 
 function getLayerIcon(layer: EffectLayer) {

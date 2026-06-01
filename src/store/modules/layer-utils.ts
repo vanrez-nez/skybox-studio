@@ -16,6 +16,7 @@ import type {
   ImageState,
   LayersSlice,
   SpotState,
+  StarfieldState,
 } from "@/store/modules/layers";
 
 export type GradientStop = {
@@ -131,6 +132,23 @@ export function syncSelectedSpotLayer(state: LayersSlice, spot: SpotState) {
   return state.effectLayers.map((layer) =>
     layer.id === selectedLayer.id && layer.type === "spot"
       ? { ...layer, params: cloneSpotState(spot) }
+      : layer
+  );
+}
+
+export function syncSelectedStarfieldLayer(state: LayersSlice, starfield: StarfieldState) {
+  const selectedLayer = state.effectLayers.find((layer) => layer.id === state.selectedLayerId);
+
+  if (selectedLayer?.type !== "starfield") {
+    return state.effectLayers;
+  }
+
+  return state.effectLayers.map((layer) =>
+    layer.id === selectedLayer.id && layer.type === "starfield"
+      ? {
+          ...layer,
+          params: getEffectLayerAddon(layer.type).cloneParams(starfield as never) as StarfieldState,
+        }
       : layer
   );
 }

@@ -1,11 +1,11 @@
-import type { SkyboxSpotParams } from "@/runtime/manifest";
-import type { VectorTuple } from "@/runtime/image-placement-transform";
 import {
   createDefaultSpotParams,
   normalizeSpotParams,
   radiusScaleFromSpot,
   spotFromRadiusScale,
-} from "@/runtime/spot-transform";
+  type SkyboxSpotParams,
+  type VectorTuple,
+} from "@/runtime";
 import type { LayersSlice } from "@/store/modules/layers";
 import {
   clampMidpoint,

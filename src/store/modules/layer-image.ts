@@ -1,5 +1,5 @@
 import { cloneImageState, type EffectLayer } from "@/effects/effect-layer";
-import type { SkyboxImagePlacement } from "@/runtime/manifest";
+import type { SkyboxImagePlacement } from "@/runtime";
 import type { LayersSlice } from "@/store/modules/layers";
 import {
   getHistoryPatch,

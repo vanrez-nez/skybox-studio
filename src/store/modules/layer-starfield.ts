@@ -1,14 +1,12 @@
-import type {
-  SkyboxStarfieldClipParams,
-  SkyboxStarfieldNebulaParams,
-  SkyboxStarfieldParams,
-  SkyboxStarfieldQuality,
-  SkyboxStarfieldStarsParams,
-} from "@/runtime/manifest";
 import {
   DEFAULT_STARFIELD_PARAMS,
   normalizeStarfieldParams,
-} from "@/runtime/starfield-static";
+  type SkyboxStarfieldClipParams,
+  type SkyboxStarfieldNebulaParams,
+  type SkyboxStarfieldParams,
+  type SkyboxStarfieldQuality,
+  type SkyboxStarfieldStarsParams,
+} from "@/runtime";
 import type { WorkspaceStore } from "@/store/app";
 import {
   createDefaultFieldGradientState,

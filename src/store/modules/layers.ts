@@ -3,7 +3,7 @@ import type { Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge
 import { reorderWithEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/reorder-with-edge";
 
 import type { EffectLayerModifier } from "@/effects/effect-layer-interfaces";
-import type { SkyboxStarfieldClipParams } from "@/runtime/manifest";
+import type { SkyboxStarfieldClipParams } from "@/runtime";
 import {
   cloneFieldGradientState,
   cloneGradientState,
@@ -125,6 +125,15 @@ export type LayersSlice = {
   selectedLayerId: string;
   addEffectLayer: (type: EffectLayerType, options?: AddEffectLayerOptions) => void;
   dispatchLayerOperation: (operation: LayerOperation, options?: HistoryUpdateOptions) => void;
+  updateLayerParams: (
+    layerId: string,
+    updater: (params: EffectLayer["params"]) => EffectLayer["params"],
+    options?: HistoryUpdateOptions
+  ) => void;
+  updateSelectedLayerParams: (
+    updater: (params: EffectLayer["params"]) => EffectLayer["params"],
+    options?: HistoryUpdateOptions
+  ) => void;
   applyEffectLayerModifier: (
     id: string,
     modifier: EffectLayerModifier,
@@ -378,6 +387,54 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
   selectedLayerId: "",
   dispatchLayerOperation: (operation, options) =>
     set((state) => applyLayerOperationToState(state, operation, options) ?? state),
+  updateLayerParams: (layerId, updater, options) =>
+    set((state) => {
+      const layer = state.effectLayers.find((effectLayer) => effectLayer.id === layerId);
+
+      if (!layer) {
+        return state;
+      }
+
+      const nextLayer = cloneEffectLayer({
+        ...layer,
+        params: updater(layer.params),
+      } as EffectLayer);
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === layerId ? nextLayer : effectLayer
+        ),
+        ...(state.selectedLayerId === layerId ? selectedLayerStatePatch(nextLayer) : {}),
+        ...getHistoryPatch(state, options),
+      };
+    }),
+  updateSelectedLayerParams: (updater, options) =>
+    set((state) => {
+      if (!state.selectedLayerId) {
+        return state;
+      }
+
+      const layer = state.effectLayers.find(
+        (effectLayer) => effectLayer.id === state.selectedLayerId
+      );
+
+      if (!layer) {
+        return state;
+      }
+
+      const nextLayer = cloneEffectLayer({
+        ...layer,
+        params: updater(layer.params),
+      } as EffectLayer);
+
+      return {
+        effectLayers: state.effectLayers.map((effectLayer) =>
+          effectLayer.id === layer.id ? nextLayer : effectLayer
+        ),
+        ...selectedLayerStatePatch(nextLayer),
+        ...getHistoryPatch(state, options),
+      };
+    }),
   addEffectLayer: (type, options) =>
     set((state) => {
       const layerTypeCount = state.effectLayers.filter((layer) => layer.type === type).length + 1;

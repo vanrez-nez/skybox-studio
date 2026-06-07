@@ -63,7 +63,7 @@ export const createSceneSlice: StateCreator<
   SceneSlice
 > = (set) => ({
   activeView: "editor",
-  cameraRotationMode: "drag",
+  cameraRotationMode: "scroll",
   lastLayerFocusRequest: null,
   lastMenuEvent: null,
   sceneLookDirection: [0, 0, -1],

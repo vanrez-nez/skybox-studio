@@ -21,7 +21,7 @@ const pitchAxis = new THREE.Vector3();
 export class SkyboxOrbitControls {
   dampingFactor = DEFAULT_DAMPING_FACTOR;
   enabled = true;
-  rotationMode: SkyboxRotationMode = "drag";
+  rotationMode: SkyboxRotationMode = "scroll";
   rotateSpeed = DEFAULT_ROTATE_SPEED;
 
   #animationFrameId: number | null = null;

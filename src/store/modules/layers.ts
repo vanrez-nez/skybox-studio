@@ -3,69 +3,50 @@ import type { Edge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge
 import { reorderWithEdge } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/reorder-with-edge";
 
 import type { EffectLayerModifier } from "@/effects/effect-layer-interfaces";
-import type { SkyboxStarfieldClipParams } from "@/runtime";
 import {
-  cloneFieldGradientState,
-  cloneGradientState,
-  cloneImageState,
-  cloneSpotState,
-  cloneStarfieldState,
+  getEffectLayerAddon,
   type EffectLayer,
   type EffectLayerBlendMode,
   type EffectLayerType,
-  getEffectLayerAddon,
 } from "@/effects/effect-layer";
-import type { HistoryParticipant, WorkspaceStore } from "@/store/app";
-import {
-  createDefaultFieldGradientState,
-  createFieldGradientLayerActions,
-  type FieldGradientAnchor,
-  type FieldGradientMode,
-  type FieldGradientState,
-} from "@/store/modules/layer-field-gradient";
-import {
-  createDefaultGradientState,
-  createGradientLayerActions,
-  type GradientMode,
-  type GradientState,
-} from "@/store/modules/layer-gradient";
 import {
   cloneImageStateForHistory,
-  createDefaultImageState,
-  createImageLayerActions,
   createRuntimeImageLookup,
-  IMAGE_PLACEMENT_TRANSACTION_SCOPE,
-  rehydrateImageRuntimeData,
   restoreImageLayerRuntimeData,
+} from "@/effects/layers/image/history";
+import {
+  IMAGE_PLACEMENT_TRANSACTION_SCOPE,
   type ImagePlacement,
   type ImageState,
-} from "@/store/modules/layer-image";
-import {
-  createDefaultSpotState,
-  createSpotLayerActions,
-  type SpotColorMode,
-  type SpotLightParameterKey,
-  type SpotState,
-} from "@/store/modules/layer-spot";
-import {
-  createDefaultStarfieldState,
-  createStarfieldLayerActions,
-  type StarfieldFieldAnchor,
-  type StarfieldFieldMode,
-  type StarfieldClipParameterKey,
-  type StarfieldColor,
-  type StarfieldNebulaColorKey,
-  type StarfieldNebulaParameterKey,
-  type StarfieldQuality,
-  type StarfieldStarsParameterKey,
-  type StarfieldState,
-} from "@/store/modules/layer-starfield";
+} from "@/effects/layers/image/state";
+import type {
+  FieldGradientAnchor,
+  FieldGradientMode,
+  FieldGradientState,
+} from "@/effects/layers/field-gradient/state";
+import type { GradientMode, GradientState } from "@/effects/layers/gradient/state";
+import type { GradientStop } from "@/effects/layers/primitives";
+import type {
+  SpotColorMode,
+  SpotLightParameterKey,
+  SpotState,
+} from "@/effects/layers/spot/state";
+import type {
+  StarfieldClipParameterKey,
+  StarfieldColor,
+  StarfieldFieldAnchor,
+  StarfieldFieldMode,
+  StarfieldNebulaColorKey,
+  StarfieldNebulaParameterKey,
+  StarfieldQuality,
+  StarfieldStarsParameterKey,
+  StarfieldState,
+} from "@/effects/layers/starfield/state";
+import type { HistoryParticipant, WorkspaceStore } from "@/store/app";
 import {
   cloneEffectLayer,
   getHistoryPatch,
-  selectedLayerStatePatch,
   type EffectLayerBlendModePreview,
-  type GradientStop,
   type HistoryUpdateOptions,
 } from "@/store/modules/layer-utils";
 import {
@@ -102,11 +83,6 @@ export type {
 
 export type LayersHistorySnapshot = {
   effectLayers: EffectLayer[];
-  fieldGradient: FieldGradientState;
-  gradient: GradientState;
-  image: ImageState;
-  spot: SpotState;
-  starfield: StarfieldState;
   selectedLayerId: string;
 };
 
@@ -116,11 +92,6 @@ export type AddEffectLayerOptions = {
 
 export type LayersSlice = {
   effectLayers: EffectLayer[];
-  fieldGradient: FieldGradientState;
-  gradient: GradientState;
-  image: ImageState;
-  spot: SpotState;
-  starfield: StarfieldState;
   previewEffectLayerBlendMode: EffectLayerBlendModePreview | null;
   selectedLayerId: string;
   addEffectLayer: (type: EffectLayerType, options?: AddEffectLayerOptions) => void;
@@ -139,115 +110,19 @@ export type LayersSlice = {
     modifier: EffectLayerModifier,
     options?: HistoryUpdateOptions
   ) => void;
-  addFieldGradientAnchor: (anchor: Omit<FieldGradientAnchor, "id">) => void;
   clearPreviewEffectLayerBlendMode: () => void;
-  addGradientStop: (stop: Omit<GradientStop, "id" | "midpoint"> & { midpoint?: number }) => void;
   deleteEffectLayer: (id: string) => void;
   deleteSelectedEffectLayer: () => void;
-  randomizeFieldGradient: () => void;
-  removeFieldGradientAnchor: (id: string) => void;
-  removeGradientStop: (id: string) => void;
   reorderEffectLayer: (sourceId: string, targetId: string, closestEdgeOfTarget: Edge | null) => void;
   renameEffectLayer: (id: string, name: string) => void;
-  resetFieldGradient: () => void;
   selectEffectLayer: (id: string) => void;
-  selectFieldGradientAnchor: (id: string) => void;
-  selectGradientStop: (id: string) => void;
-  clearImage: () => void;
   setEffectLayerBlendMode: (id: string, blendMode: EffectLayerBlendMode) => void;
   setEffectLayerLocked: (id: string, locked: boolean) => void;
   setPreviewEffectLayerBlendMode: (layerId: string, blendMode: EffectLayerBlendMode) => void;
   setEffectLayerOpacity: (id: string, opacity: number, options?: HistoryUpdateOptions) => void;
-  setFieldGradientAmplitude: (amplitude: number, options?: HistoryUpdateOptions) => void;
-  setFieldGradientFrequency: (frequency: number, options?: HistoryUpdateOptions) => void;
-  setFieldGradientMode: (mode: FieldGradientMode) => void;
-  setFieldGradientPower: (power: number, options?: HistoryUpdateOptions) => void;
-  setGradientMode: (mode: GradientMode) => void;
-  setGradientRotation: (rotation: number, options?: HistoryUpdateOptions) => void;
-  setImage: (image: ImageState) => void;
-  setImageAssetSource: (id: string, src: string | null) => void;
-  setImagePlacement: (
-    id: string,
-    placement: ImagePlacement | null,
-    options?: HistoryUpdateOptions
-  ) => void;
-  addSpotStop: (stop: Omit<GradientStop, "id" | "midpoint"> & { midpoint?: number }) => void;
-  removeSpotStop: (id: string) => void;
-  selectSpotStop: (id: string) => void;
-  setSpotColorMode: (mode: SpotColorMode) => void;
-  setSpotLightColor: (color: string, options?: HistoryUpdateOptions) => void;
-  setSpotBrightness: (brightness: number, options?: HistoryUpdateOptions) => void;
-  setSpotGlow: (glow: number, options?: HistoryUpdateOptions) => void;
-  setSpotHalo: (halo: number, options?: HistoryUpdateOptions) => void;
-  setSpotLightParameter: (
-    parameter: SpotLightParameterKey,
-    value: number,
-    options?: HistoryUpdateOptions
-  ) => void;
-  setSpotPosition: (centerDirection: [number, number, number], options?: HistoryUpdateOptions) => void;
-  setSpotRadiusScale: (radiusScale: number, options?: HistoryUpdateOptions) => void;
-  addStarfieldFieldAnchor: (anchor: Omit<StarfieldFieldAnchor, "id">) => void;
-  randomizeStarfieldField: () => void;
-  removeStarfieldFieldAnchor: (id: string) => void;
-  resetStarfieldField: () => void;
-  selectStarfieldFieldAnchor: (id: string) => void;
-  setStarfieldClipParameter: (
-    parameter: StarfieldClipParameterKey,
-    value: number,
-    options?: HistoryUpdateOptions
-  ) => void;
-  setStarfieldClip: (
-    clip: SkyboxStarfieldClipParams,
-    options?: HistoryUpdateOptions
-  ) => void;
-  setStarfieldNebulaColor: (
-    parameter: StarfieldNebulaColorKey,
-    color: StarfieldColor,
-    options?: HistoryUpdateOptions
-  ) => void;
-  setStarfieldFieldAmplitude: (amplitude: number, options?: HistoryUpdateOptions) => void;
-  setStarfieldFieldFrequency: (frequency: number, options?: HistoryUpdateOptions) => void;
-  setStarfieldFieldMode: (mode: StarfieldFieldMode) => void;
-  setStarfieldFieldPower: (power: number, options?: HistoryUpdateOptions) => void;
-  setStarfieldNebulaParameter: (
-    parameter: StarfieldNebulaParameterKey,
-    value: number,
-    options?: HistoryUpdateOptions
-  ) => void;
-  setStarfieldQuality: (quality: StarfieldQuality) => void;
-  setStarfieldStarsParameter: (
-    parameter: StarfieldStarsParameterKey,
-    value: number,
-    options?: HistoryUpdateOptions
-  ) => void;
   toggleEffectLayerEnabled: (id: string) => void;
-  updateStarfieldFieldAnchor: (
-    id: string,
-    update: Partial<Omit<StarfieldFieldAnchor, "id">>,
-    options?: HistoryUpdateOptions
-  ) => void;
-  updateFieldGradientAnchor: (
-    id: string,
-    update: Partial<Omit<FieldGradientAnchor, "id">>,
-    options?: HistoryUpdateOptions
-  ) => void;
-  updateGradientStop: (
-    id: string,
-    update: Partial<Omit<GradientStop, "id">>,
-    options?: HistoryUpdateOptions
-  ) => void;
-  updateSpotStop: (
-    id: string,
-    update: Partial<Omit<GradientStop, "id">>,
-    options?: HistoryUpdateOptions
-  ) => void;
 };
 
-const initialGradient = createDefaultGradientState();
-const initialFieldGradient = createDefaultFieldGradientState();
-const initialImage = createDefaultImageState();
-const initialSpot = createDefaultSpotState();
-const initialStarfield = createDefaultStarfieldState();
 const initialEffectLayers: EffectLayer[] = [];
 
 function cloneEffectLayerForHistory(layer: EffectLayer): EffectLayer {
@@ -257,43 +132,25 @@ function cloneEffectLayerForHistory(layer: EffectLayer): EffectLayer {
 
   return {
     ...layer,
-    params: cloneImageStateForHistory(layer.params),
+    params: cloneImageStateForHistory(layer.params as ImageState),
   };
 }
 
 function captureLayersHistorySnapshot(state: LayersSlice): LayersHistorySnapshot {
   return {
     effectLayers: state.effectLayers.map(cloneEffectLayerForHistory),
-    fieldGradient: cloneFieldGradientState(state.fieldGradient),
-    gradient: cloneGradientState(state.gradient),
-    image: cloneImageStateForHistory(state.image),
-    spot: cloneSpotState(state.spot),
-    starfield: cloneStarfieldState(state.starfield),
     selectedLayerId: state.selectedLayerId,
   };
 }
 
 function restoreLayersHistorySnapshot(snapshot: LayersHistorySnapshot, currentState: LayersSlice) {
-  const runtimeLookup = createRuntimeImageLookup(currentState);
+  const runtimeLookup = createRuntimeImageLookup(currentState.effectLayers);
   const effectLayers = snapshot.effectLayers
     .map(cloneEffectLayerForHistory)
     .map((layer) => restoreImageLayerRuntimeData(layer, runtimeLookup));
-  const selectedLayer = effectLayers.find((layer) => layer.id === snapshot.selectedLayerId);
-  const image =
-    selectedLayer?.type === "image"
-      ? cloneImageState(selectedLayer.params)
-      : rehydrateImageRuntimeData(
-          cloneImageStateForHistory(snapshot.image),
-          snapshot.image.assetId ? runtimeLookup.byAssetId.get(snapshot.image.assetId) : undefined
-        );
 
   return {
     effectLayers,
-    fieldGradient: cloneFieldGradientState(snapshot.fieldGradient),
-    gradient: cloneGradientState(snapshot.gradient),
-    image,
-    spot: cloneSpotState(snapshot.spot ?? createDefaultSpotState()),
-    starfield: cloneStarfieldState(snapshot.starfield ?? createDefaultStarfieldState()),
     selectedLayerId: snapshot.selectedLayerId,
   };
 }
@@ -303,68 +160,16 @@ function createEffectLayer(
   index: number,
   options: AddEffectLayerOptions = {}
 ): EffectLayer {
-  const id = `layer-${type}-${Date.now()}-${index}`;
-
-  if (type === "gradient") {
-    return {
-      blendMode: "normal",
-      enabled: true,
-      id,
-      locked: false,
-      name: getEffectLayerAddon(type).getDefaultName(index),
-      opacity: 100,
-      params: createDefaultGradientState(),
-      type,
-    };
-  }
-
-  if (type === "field-gradient") {
-    return {
-      blendMode: "normal",
-      enabled: true,
-      id,
-      locked: false,
-      name: getEffectLayerAddon(type).getDefaultName(index),
-      opacity: 100,
-      params: createDefaultFieldGradientState(),
-      type,
-    };
-  }
-
-  if (type === "spot") {
-    return {
-      blendMode: "normal",
-      enabled: true,
-      id,
-      locked: false,
-      name: getEffectLayerAddon(type).getDefaultName(index),
-      opacity: 100,
-      params: createDefaultSpotState(options.centerDirection),
-      type,
-    };
-  }
-
-  if (type === "starfield") {
-    return {
-      blendMode: "screen",
-      enabled: true,
-      id,
-      locked: false,
-      name: getEffectLayerAddon(type).getDefaultName(index),
-      opacity: 100,
-      params: createDefaultStarfieldState(),
-      type,
-    };
-  }
+  const addon = getEffectLayerAddon(type);
 
   return {
-    blendMode: "normal",
+    blendMode: addon.defaultBlendMode,
     enabled: true,
-    id,
+    id: `layer-${type}-${Date.now()}-${index}`,
     locked: false,
-    name: getEffectLayerAddon(type).getDefaultName(index),
+    name: addon.getDefaultName(index),
     opacity: 100,
-    params: createDefaultImageState(),
+    params: addon.createDefaultParams({ centerDirection: options.centerDirection }),
     type,
   };
 }
@@ -378,11 +183,6 @@ export const layersHistoryParticipant: HistoryParticipant<WorkspaceStore> = {
 
 export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice> = (set) => ({
   effectLayers: initialEffectLayers,
-  fieldGradient: initialFieldGradient,
-  gradient: initialGradient,
-  image: initialImage,
-  spot: initialSpot,
-  starfield: initialStarfield,
   previewEffectLayerBlendMode: null,
   selectedLayerId: "",
   dispatchLayerOperation: (operation, options) =>
@@ -395,16 +195,18 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         return state;
       }
 
-      const nextLayer = cloneEffectLayer({
-        ...layer,
-        params: updater(layer.params),
-      } as EffectLayer);
+      const nextParams = updater(layer.params);
+
+      if (nextParams === layer.params) {
+        return state;
+      }
+
+      const nextLayer = cloneEffectLayer({ ...layer, params: nextParams });
 
       return {
         effectLayers: state.effectLayers.map((effectLayer) =>
           effectLayer.id === layerId ? nextLayer : effectLayer
         ),
-        ...(state.selectedLayerId === layerId ? selectedLayerStatePatch(nextLayer) : {}),
         ...getHistoryPatch(state, options),
       };
     }),
@@ -422,16 +224,18 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         return state;
       }
 
-      const nextLayer = cloneEffectLayer({
-        ...layer,
-        params: updater(layer.params),
-      } as EffectLayer);
+      const nextParams = updater(layer.params);
+
+      if (nextParams === layer.params) {
+        return state;
+      }
+
+      const nextLayer = cloneEffectLayer({ ...layer, params: nextParams });
 
       return {
         effectLayers: state.effectLayers.map((effectLayer) =>
           effectLayer.id === layer.id ? nextLayer : effectLayer
         ),
-        ...selectedLayerStatePatch(nextLayer),
         ...getHistoryPatch(state, options),
       };
     }),
@@ -444,7 +248,6 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         effectLayers: [nextLayer, ...state.effectLayers],
         selectedLayerId: nextLayer.id,
         ...getHistoryPatch(state),
-        ...selectedLayerStatePatch(nextLayer),
         previewEffectLayerBlendMode: null,
       };
     }),
@@ -471,21 +274,11 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
           ? nextLayers[Math.max(0, deleteIndex - 1)] ?? nextLayers[0]
           : nextLayers.find((layer) => layer.id === state.selectedLayerId) ?? nextLayers[0];
 
-      if (!selectedLayer) {
-        return {
-          effectLayers: nextLayers,
-          ...getHistoryPatch(state),
-          previewEffectLayerBlendMode: null,
-          selectedLayerId: "",
-        };
-      }
-
       return {
         effectLayers: nextLayers,
         ...getHistoryPatch(state),
         previewEffectLayerBlendMode: null,
-        selectedLayerId: selectedLayer.id,
-        ...selectedLayerStatePatch(selectedLayer),
+        selectedLayerId: selectedLayer?.id ?? "",
       };
     }),
   deleteSelectedEffectLayer: () =>
@@ -503,21 +296,11 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
       const nextLayers = state.effectLayers.filter((layer) => layer.id !== state.selectedLayerId);
       const selectedLayer = nextLayers[Math.max(0, deleteIndex - 1)] ?? nextLayers[0];
 
-      if (!selectedLayer) {
-        return {
-          effectLayers: nextLayers,
-          ...getHistoryPatch(state),
-          previewEffectLayerBlendMode: null,
-          selectedLayerId: "",
-        };
-      }
-
       return {
         effectLayers: nextLayers,
         ...getHistoryPatch(state),
         previewEffectLayerBlendMode: null,
-        selectedLayerId: selectedLayer.id,
-        ...selectedLayerStatePatch(selectedLayer),
+        selectedLayerId: selectedLayer?.id ?? "",
       };
     }),
   reorderEffectLayer: (sourceId, targetId, closestEdgeOfTarget) =>
@@ -559,7 +342,6 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
       return {
         previewEffectLayerBlendMode: null,
         selectedLayerId: id,
-        ...selectedLayerStatePatch(selectedLayer),
       };
     }),
   setEffectLayerBlendMode: (id, blendMode) =>
@@ -621,9 +403,4 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         ) ?? state
       );
     }),
-  ...createFieldGradientLayerActions(set),
-  ...createGradientLayerActions(set),
-  ...createImageLayerActions(set),
-  ...createSpotLayerActions(set),
-  ...createStarfieldLayerActions(set),
 });

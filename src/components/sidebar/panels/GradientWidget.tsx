@@ -13,12 +13,15 @@ import { Button } from "@/components/ui/primitives/button";
 import { RotationField } from "@/components/ui/composables/rotation-field";
 import { SliderInput } from "@/components/ui/composables/slider-input";
 import { Widget } from "./Widget";
-import { gradientLayerAdapter } from "@/effects/effect-layer";
+import {
+  createDefaultGradientState,
+  type GradientState,
+} from "@/effects/layers/gradient/state";
+import * as gradientOps from "@/effects/layers/gradient/operations";
+import type { GradientStop } from "@/effects/layers/primitives";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
-import type { GradientStop } from "@/store/modules/layers";
-
-export const gradientEffectLayerAdapter = gradientLayerAdapter;
+import { useSelectedLayerParams } from "@/store/use-selected-layer";
 
 function sortStops(stops: GradientStop[]) {
   return [...stops].sort((firstStop, secondStop) => firstStop.location - secondStop.location);
@@ -139,14 +142,32 @@ export function GradientWidget() {
     move: (event: globalThis.PointerEvent) => void;
   } | null>(null);
   const [focusedStopField, setFocusedStopField] = useState<"location" | "opacity" | null>(null);
-  const gradient = useWorkspaceStore((state) => state.gradient);
-  const addGradientStop = useWorkspaceStore((state) => state.addGradientStop);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
-  const removeGradientStop = useWorkspaceStore((state) => state.removeGradientStop);
-  const selectGradientStop = useWorkspaceStore((state) => state.selectGradientStop);
-  const setGradientRotation = useWorkspaceStore((state) => state.setGradientRotation);
-  const updateGradientStop = useWorkspaceStore((state) => state.updateGradientStop);
+  const updateSelectedLayerParams = useWorkspaceStore((state) => state.updateSelectedLayerParams);
+  const gradient = useSelectedLayerParams<GradientState>("gradient") ?? createDefaultGradientState();
+  const addGradientStop = (stop: Omit<GradientStop, "id" | "midpoint"> & { midpoint?: number }) =>
+    updateSelectedLayerParams((params) => gradientOps.addGradientStop(params as GradientState, stop));
+  const removeGradientStop = (id: string) =>
+    updateSelectedLayerParams((params) => gradientOps.removeGradientStop(params as GradientState, id));
+  const selectGradientStop = (id: string) =>
+    updateSelectedLayerParams(
+      (params) => gradientOps.selectGradientStop(params as GradientState, id),
+      { history: "skip" }
+    );
+  const setGradientRotation = (rotation: number) =>
+    updateSelectedLayerParams((params) =>
+      gradientOps.setGradientRotation(params as GradientState, rotation)
+    );
+  const updateGradientStop = (
+    id: string,
+    update: Partial<Omit<GradientStop, "id">>,
+    options?: { history?: "checkpoint" | "skip" }
+  ) =>
+    updateSelectedLayerParams(
+      (params) => gradientOps.updateGradientStop(params as GradientState, id, update),
+      options
+    );
   const selectedStop =
     gradient.stops.find((stop) => stop.id === gradient.selectedStopId) ?? gradient.stops[0];
   const gradientTrackBackground = getGradientBackground(gradient.stops);
@@ -300,7 +321,14 @@ export function GradientWidget() {
         return;
       }
 
-      const latestStops = sortStops(useWorkspaceStore.getState().gradient.stops);
+      const latestState = useWorkspaceStore.getState();
+      const latestLayer = latestState.effectLayers.find(
+        (layer) => layer.id === latestState.selectedLayerId
+      );
+      const latestStops =
+        latestLayer?.type === "gradient"
+          ? sortStops((latestLayer.params as GradientState).stops)
+          : [];
       const latestCurrentStop = latestStops.find((stop) => stop.id === activeDrag.id);
       const latestCurrentIndex = latestCurrentStop ? latestStops.indexOf(latestCurrentStop) : -1;
       const latestNextStop = latestCurrentIndex >= 0 ? latestStops[latestCurrentIndex + 1] : undefined;

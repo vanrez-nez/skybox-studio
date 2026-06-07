@@ -13,9 +13,9 @@ import {
   writeEffectLayerInterface,
 } from "@/effects/effect-layer-interfaces";
 import { createAngularDecalPlacement } from "@/runtime/image-placement-transform";
-import { createDefaultGradientState } from "@/store/modules/layer-gradient";
-import { createDefaultImageState } from "@/store/modules/layer-image";
-import { createDefaultSpotState } from "@/store/modules/layer-spot";
+import { createDefaultGradientState } from "@/effects/layers/gradient/state";
+import { createDefaultImageState } from "@/effects/layers/image/state";
+import { createDefaultSpotState } from "@/effects/layers/spot/state";
 
 describe("effect layer addons", () => {
   it("registers built-in addons in layer creation order", () => {

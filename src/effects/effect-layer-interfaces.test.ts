@@ -6,9 +6,9 @@ import {
 } from "@/effects/effect-layer-interfaces";
 import type { EffectLayer } from "@/effects/effect-layer";
 import { createAngularDecalPlacement } from "@/runtime/image-placement-transform";
-import { createDefaultFieldGradientState } from "@/store/modules/layer-field-gradient";
-import { createDefaultGradientState } from "@/store/modules/layer-gradient";
-import { createDefaultSpotState } from "@/store/modules/layer-spot";
+import { createDefaultFieldGradientState } from "@/effects/layers/field-gradient/state";
+import { createDefaultGradientState } from "@/effects/layers/gradient/state";
+import { createDefaultSpotState } from "@/effects/layers/spot/state";
 
 const COMMON_LAYER_FIELDS = {
   blendMode: "normal" as const,

@@ -10,15 +10,20 @@ import {
 } from "@/components/ui/primitives/select";
 import { Slider } from "@/components/ui/primitives/slider";
 import type { SkyboxStarfieldClipParams } from "@/runtime/manifest";
+import * as starfieldOps from "@/effects/layers/starfield/operations";
+import {
+  createDefaultStarfieldState,
+  type StarfieldClipParameterKey,
+  type StarfieldColor,
+  type StarfieldNebulaColorKey,
+  type StarfieldNebulaParameterKey,
+  type StarfieldQuality,
+  type StarfieldStarsParameterKey,
+  type StarfieldState,
+} from "@/effects/layers/starfield/state";
+import type { StarfieldFieldAnchor } from "@/effects/layers/starfield/state";
 import { useWorkspaceStore } from "@/store/app";
-import type {
-  StarfieldClipParameterKey,
-  StarfieldColor,
-  StarfieldNebulaColorKey,
-  StarfieldNebulaParameterKey,
-  StarfieldQuality,
-  StarfieldStarsParameterKey,
-} from "@/store/modules/layers";
+import { useSelectedLayerParams } from "@/store/use-selected-layer";
 import { Widget } from "./Widget";
 
 type SliderHistoryOptions = {
@@ -234,25 +239,106 @@ function ColorField({
 }
 
 export function StarfieldWidget() {
+  type HistoryOptions = { history?: "checkpoint" | "skip" };
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
-  const starfield = useWorkspaceStore((state) => state.starfield);
-  const addAnchor = useWorkspaceStore((state) => state.addStarfieldFieldAnchor);
-  const randomizeField = useWorkspaceStore((state) => state.randomizeStarfieldField);
-  const removeAnchor = useWorkspaceStore((state) => state.removeStarfieldFieldAnchor);
-  const resetField = useWorkspaceStore((state) => state.resetStarfieldField);
-  const selectAnchor = useWorkspaceStore((state) => state.selectStarfieldFieldAnchor);
-  const setClip = useWorkspaceStore((state) => state.setStarfieldClip);
-  const setClipParameter = useWorkspaceStore((state) => state.setStarfieldClipParameter);
-  const setFieldAmplitude = useWorkspaceStore((state) => state.setStarfieldFieldAmplitude);
-  const setFieldFrequency = useWorkspaceStore((state) => state.setStarfieldFieldFrequency);
-  const setFieldMode = useWorkspaceStore((state) => state.setStarfieldFieldMode);
-  const setFieldPower = useWorkspaceStore((state) => state.setStarfieldFieldPower);
-  const setNebulaColor = useWorkspaceStore((state) => state.setStarfieldNebulaColor);
-  const setNebulaParameter = useWorkspaceStore((state) => state.setStarfieldNebulaParameter);
-  const setQuality = useWorkspaceStore((state) => state.setStarfieldQuality);
-  const setStarsParameter = useWorkspaceStore((state) => state.setStarfieldStarsParameter);
-  const updateAnchor = useWorkspaceStore((state) => state.updateStarfieldFieldAnchor);
+  const updateSelectedLayerParams = useWorkspaceStore((state) => state.updateSelectedLayerParams);
+  const starfield = useSelectedLayerParams<StarfieldState>("starfield") ?? createDefaultStarfieldState();
+  const addAnchor = (anchor: Omit<StarfieldFieldAnchor, "id">) =>
+    updateSelectedLayerParams((params) =>
+      starfieldOps.addStarfieldFieldAnchor(params as StarfieldState, anchor)
+    );
+  const randomizeField = () =>
+    updateSelectedLayerParams((params) =>
+      starfieldOps.randomizeStarfieldField(params as StarfieldState)
+    );
+  const removeAnchor = (id: string) =>
+    updateSelectedLayerParams((params) =>
+      starfieldOps.removeStarfieldFieldAnchor(params as StarfieldState, id)
+    );
+  const resetField = () =>
+    updateSelectedLayerParams((params) =>
+      starfieldOps.resetStarfieldField(params as StarfieldState)
+    );
+  const selectAnchor = (id: string) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.selectStarfieldFieldAnchor(params as StarfieldState, id),
+      { history: "skip" }
+    );
+  const setClip = (clip: SkyboxStarfieldClipParams, options?: HistoryOptions) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.setStarfieldClip(params as StarfieldState, clip),
+      options
+    );
+  const setClipParameter = (
+    parameter: StarfieldClipParameterKey,
+    value: number,
+    options?: HistoryOptions
+  ) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.setStarfieldClipParameter(params as StarfieldState, parameter, value),
+      options
+    );
+  const setFieldAmplitude = (amplitude: number, options?: HistoryOptions) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.setStarfieldFieldAmplitude(params as StarfieldState, amplitude),
+      options
+    );
+  const setFieldFrequency = (frequency: number, options?: HistoryOptions) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.setStarfieldFieldFrequency(params as StarfieldState, frequency),
+      options
+    );
+  const setFieldMode = (mode: StarfieldState["nebulaField"]["mode"]) =>
+    updateSelectedLayerParams((params) =>
+      starfieldOps.setStarfieldFieldMode(params as StarfieldState, mode)
+    );
+  const setFieldPower = (power: number, options?: HistoryOptions) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.setStarfieldFieldPower(params as StarfieldState, power),
+      options
+    );
+  const setNebulaColor = (
+    parameter: StarfieldNebulaColorKey,
+    color: StarfieldColor,
+    options?: HistoryOptions
+  ) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.setStarfieldNebulaColor(params as StarfieldState, parameter, color),
+      options
+    );
+  const setNebulaParameter = (
+    parameter: StarfieldNebulaParameterKey,
+    value: number,
+    options?: HistoryOptions
+  ) =>
+    updateSelectedLayerParams(
+      (params) =>
+        starfieldOps.setStarfieldNebulaParameter(params as StarfieldState, parameter, value),
+      options
+    );
+  const setQuality = (quality: StarfieldQuality) =>
+    updateSelectedLayerParams((params) =>
+      starfieldOps.setStarfieldQuality(params as StarfieldState, quality)
+    );
+  const setStarsParameter = (
+    parameter: StarfieldStarsParameterKey,
+    value: number,
+    options?: HistoryOptions
+  ) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.setStarfieldStarsParameter(params as StarfieldState, parameter, value),
+      options
+    );
+  const updateAnchor = (
+    id: string,
+    update: Partial<Omit<StarfieldFieldAnchor, "id">>,
+    options?: HistoryOptions
+  ) =>
+    updateSelectedLayerParams(
+      (params) => starfieldOps.updateStarfieldFieldAnchor(params as StarfieldState, id, update),
+      options
+    );
 
   return (
     <Widget title="Starfield" contentClassName="grid min-h-0 gap-3 overflow-y-auto p-3">

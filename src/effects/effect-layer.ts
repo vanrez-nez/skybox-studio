@@ -1,14 +1,35 @@
-import type {
-  FieldGradientState,
-  GradientState,
-  ImageState,
-  SpotState,
-  StarfieldState,
-} from "@/store/modules/layers";
+import type { ComponentType } from "react";
+
 import {
   normalizeBlendMode,
   type EffectLayerBlendMode,
 } from "@/effects/blend-modes";
+import {
+  cloneFieldGradientState,
+  createDefaultFieldGradientState,
+  type FieldGradientState,
+} from "@/effects/layers/field-gradient/state";
+import {
+  cloneGradientState,
+  createDefaultGradientState,
+  type GradientState,
+} from "@/effects/layers/gradient/state";
+import {
+  cloneImageState,
+  createDefaultImageState,
+  type ImageState,
+} from "@/effects/layers/image/state";
+import {
+  cloneSpotState,
+  createDefaultSpotState,
+  type SpotState,
+} from "@/effects/layers/spot/state";
+import {
+  cloneStarfieldState,
+  createDefaultStarfieldState,
+  starfieldStateToManifestParams,
+  type StarfieldState,
+} from "@/effects/layers/starfield/state";
 import type {
   SkyboxFieldGradientParams,
   SkyboxGradientParams,
@@ -29,13 +50,11 @@ import {
   type Point2,
 } from "@/runtime/image-placement-transform";
 import {
-  normalizeSpotParams,
   positionFromSpot,
   spotFromPosition,
 } from "@/runtime/spot-transform";
-import { normalizeStarfieldParams } from "@/runtime/starfield-static";
 
-export type EffectLayerType = "gradient" | "field-gradient" | "image" | "spot" | "starfield";
+export type EffectLayerType = string;
 export type { EffectLayerBlendMode };
 
 export type SerializedGradientEffect = {
@@ -78,70 +97,21 @@ export type SerializedEffectLayer = {
   opacity?: number;
 };
 
-export type EffectLayer =
-  | {
-      blendMode: EffectLayerBlendMode;
-      enabled: boolean;
-      id: string;
-      locked: boolean;
-      name: string;
-      opacity: number;
-      params: GradientState;
-      type: "gradient";
-    }
-  | {
-      blendMode: EffectLayerBlendMode;
-      enabled: boolean;
-      id: string;
-      locked: boolean;
-      name: string;
-      opacity: number;
-      params: FieldGradientState;
-      type: "field-gradient";
-    }
-  | {
-      blendMode: EffectLayerBlendMode;
-      enabled: boolean;
-      id: string;
-      locked: boolean;
-      name: string;
-      opacity: number;
-      params: ImageState;
-      type: "image";
-    }
-  | {
-      blendMode: EffectLayerBlendMode;
-      enabled: boolean;
-      id: string;
-      locked: boolean;
-      name: string;
-      opacity: number;
-      params: SpotState;
-      type: "spot";
-    }
-  | {
-      blendMode: EffectLayerBlendMode;
-      enabled: boolean;
-      id: string;
-      locked: boolean;
-      name: string;
-      opacity: number;
-      params: StarfieldState;
-      type: "starfield";
-    };
+export type EffectLayer<TParams = unknown> = {
+  blendMode: EffectLayerBlendMode;
+  enabled: boolean;
+  id: string;
+  locked: boolean;
+  name: string;
+  opacity: number;
+  params: TParams;
+  type: string;
+};
 
 export type EffectLayerFocusTarget = {
   direction: [number, number, number];
   type: "direction";
 };
-
-export type EffectLayerIconName = "field-gradient" | "gradient" | "image" | "spot" | "starfield";
-export type EffectLayerSelectedStateKey =
-  | "fieldGradient"
-  | "gradient"
-  | "image"
-  | "spot"
-  | "starfield";
 
 export type Point3 = {
   x: number;
@@ -162,118 +132,58 @@ export type EffectLayerTransformValueMap = {
   scale: Point2;
 };
 
-export type EffectLayerTransformCapability<TKind extends EffectLayerTransformKind> = {
-  read: (layer: EffectLayer) => EffectLayerTransformValueMap[TKind] | null;
+export type EffectLayerTransformCapability<
+  TKind extends EffectLayerTransformKind,
+  TParams = unknown
+> = {
+  read: (layer: EffectLayer<TParams>) => EffectLayerTransformValueMap[TKind] | null;
   write: (
-    layer: EffectLayer,
+    layer: EffectLayer<TParams>,
     value: EffectLayerTransformValueMap[TKind]
   ) => EffectLayer | null;
 };
 
-export type EffectLayerTransformCapabilities = Partial<{
-  [TKind in EffectLayerTransformKind]: EffectLayerTransformCapability<TKind>;
+export type EffectLayerTransformCapabilities<TParams = unknown> = Partial<{
+  [TKind in EffectLayerTransformKind]: EffectLayerTransformCapability<TKind, TParams>;
 }>;
 
-export type EffectLayerAddon<TType extends EffectLayerType = EffectLayerType, TParams = EffectLayer["params"]> = {
+export type EffectLayerDefaultParamsContext = {
+  centerDirection?: [number, number, number];
+};
+
+export type EffectLayerAddon<TType extends string = string, TParams = unknown> = {
   cloneParams: (params: TParams) => TParams;
+  createDefaultParams: (context?: EffectLayerDefaultParamsContext) => TParams;
+  defaultBlendMode: EffectLayerBlendMode;
+  // UI is attached by the app layer via registerEffectLayerUi so the runtime/
+  // store stay React-free. The sidebar/layers list read these from the registry.
+  Icon?: ComponentType;
+  Panel?: ComponentType;
   displayName: string;
   getDefaultName: (index: number) => string;
-  getFocusTarget?: (layer: Extract<EffectLayer, { type: TType }>) => EffectLayerFocusTarget | null;
-  iconName: EffectLayerIconName;
+  getFocusTarget?: (layer: EffectLayer<TParams>) => EffectLayerFocusTarget | null;
   load: (serialized: { params: TParams; type: TType }) => TParams;
-  panelId: TType;
   serialize: (params: TParams) => { params: TParams; type: TType };
-  selectedStateKey: EffectLayerSelectedStateKey;
   toManifestParams: (params: TParams) => Extract<SkyboxManifestLayer, { type: TType }>["params"];
-  transformCapabilities?: EffectLayerTransformCapabilities;
+  transformCapabilities?: EffectLayerTransformCapabilities<TParams>;
   runtime: {
-    getTopologyKey: (layer: Extract<EffectLayer, { type: TType }>) => unknown;
+    getTopologyKey: (layer: EffectLayer<TParams>) => unknown;
     updateLayerParams: (
       skybox: Skybox,
-      layer: Extract<EffectLayer, { type: TType }>,
+      layer: EffectLayer<TParams>,
       manifestLayer: Extract<SkyboxManifestLayer, { type: TType }>
     ) => void;
   };
   type: TType;
 };
 
-export type EffectLayerAdapter<TType extends EffectLayerType, TParams> = {
-  getDefaultName: (index: number) => string;
-  load: (serialized: { params: TParams; type: TType }) => TParams;
-  serialize: (params: TParams) => { params: TParams; type: TType };
-  type: TType;
+export {
+  cloneFieldGradientState,
+  cloneGradientState,
+  cloneImageState,
+  cloneSpotState,
+  cloneStarfieldState,
 };
-
-export function cloneGradientState(gradient: GradientState): GradientState {
-  return {
-    ...gradient,
-    stops: gradient.stops.map((stop) => ({
-      ...stop,
-      midpoint: stop.midpoint ?? 50,
-    })),
-  };
-}
-
-export function cloneFieldGradientState(fieldGradient: FieldGradientState): FieldGradientState {
-  return {
-    ...fieldGradient,
-    anchors: fieldGradient.anchors.map((anchor) => ({ ...anchor })),
-  };
-}
-
-function cloneImagePlacement(placement: ImageState["placement"]): ImageState["placement"] {
-  if (!placement) {
-    return null;
-  }
-
-  return normalizeImagePlacement(placement);
-}
-
-export function cloneImageState(image: ImageState): ImageState {
-  return {
-    ...image,
-    assetId: image.assetId ?? null,
-    pixels: image.pixels ? [...image.pixels] : null,
-    placement: cloneImagePlacement(image.placement),
-    src: image.src ?? null,
-  };
-}
-
-export function cloneSpotState(spot: SpotState): SpotState {
-  const normalizedSpot = normalizeSpotParams(spot);
-
-  return {
-    ...normalizedSpot,
-    selectedStopId: spot.selectedStopId ?? "spot-start",
-    stops: normalizedSpot.stops.map((stop, index) => ({
-      ...stop,
-      id: spot.stops[index]?.id ?? `spot-stop-${index}`,
-      midpoint: stop.midpoint ?? 50,
-    })),
-  };
-}
-
-export function cloneStarfieldState(starfield: StarfieldState): StarfieldState {
-  const normalized = normalizeStarfieldParams(starfield);
-  const sourceAnchors = starfield.nebulaField?.anchors ?? [];
-  const anchors = normalized.nebulaField.anchors.map((anchor, index) => ({
-    ...anchor,
-    id: sourceAnchors[index]?.id ?? `starfield-field-${index}`,
-  }));
-
-  return {
-    ...normalized,
-    nebulaField: {
-      ...normalized.nebulaField,
-      anchors,
-      selectedAnchorId:
-        starfield.nebulaField?.selectedAnchorId &&
-        anchors.some((anchor) => anchor.id === starfield.nebulaField.selectedAnchorId)
-          ? starfield.nebulaField.selectedAnchorId
-          : anchors[0]?.id ?? "starfield-field-0",
-    },
-  };
-}
 
 function isFiniteDirection(direction: [number, number, number]) {
   return direction.every(Number.isFinite) && direction.some((component) => component !== 0);
@@ -350,35 +260,17 @@ function manifestSpotParams(params: SpotState): SkyboxSpotParams {
 }
 
 function manifestStarfieldParams(params: StarfieldState): SkyboxStarfieldParams {
-  const starfield = cloneStarfieldState(params);
-
-  return normalizeStarfieldParams({
-    clip: starfield.clip,
-    nebula: starfield.nebula,
-    nebulaField: {
-      amplitude: starfield.nebulaField.amplitude,
-      anchors: starfield.nebulaField.anchors.map((anchor) => ({
-        color: anchor.color,
-        x: anchor.x,
-        y: anchor.y,
-      })),
-      frequency: starfield.nebulaField.frequency,
-      mode: starfield.nebulaField.mode,
-      power: starfield.nebulaField.power,
-    },
-    stars: starfield.stars,
-  });
+  return starfieldStateToManifestParams(params);
 }
 
 export const gradientLayerAddon: EffectLayerAddon<"gradient", GradientState> = {
   cloneParams: cloneGradientState,
+  createDefaultParams: createDefaultGradientState,
+  defaultBlendMode: "normal",
   displayName: "Gradient",
   getDefaultName: () => "Gradient",
-  iconName: "gradient",
   load: (serialized) => cloneGradientState(serialized.params),
-  panelId: "gradient",
   serialize: (params) => ({ params: cloneGradientState(params), type: "gradient" }),
-  selectedStateKey: "gradient",
   toManifestParams: manifestGradientParams,
   runtime: {
     getTopologyKey: (layer) => ({
@@ -411,13 +303,12 @@ export const gradientLayerAddon: EffectLayerAddon<"gradient", GradientState> = {
 
 export const fieldGradientLayerAddon: EffectLayerAddon<"field-gradient", FieldGradientState> = {
   cloneParams: cloneFieldGradientState,
+  createDefaultParams: createDefaultFieldGradientState,
+  defaultBlendMode: "normal",
   displayName: "Field Gradient",
   getDefaultName: () => "Field Gradient",
-  iconName: "field-gradient",
   load: (serialized) => cloneFieldGradientState(serialized.params),
-  panelId: "field-gradient",
   serialize: (params) => ({ params: cloneFieldGradientState(params), type: "field-gradient" }),
-  selectedStateKey: "fieldGradient",
   toManifestParams: manifestFieldGradientParams,
   runtime: {
     getTopologyKey: (layer) => ({
@@ -435,6 +326,8 @@ export const fieldGradientLayerAddon: EffectLayerAddon<"field-gradient", FieldGr
 
 export const imageLayerAddon: EffectLayerAddon<"image", ImageState> = {
   cloneParams: cloneImageState,
+  createDefaultParams: createDefaultImageState,
+  defaultBlendMode: "normal",
   displayName: "Image",
   getFocusTarget: (layer) => {
     if (!layer.enabled || !layer.params.src || !layer.params.placement) {
@@ -454,11 +347,8 @@ export const imageLayerAddon: EffectLayerAddon<"image", ImageState> = {
     };
   },
   getDefaultName: () => "Image",
-  iconName: "image",
   load: (serialized) => cloneImageState(serialized.params),
-  panelId: "image",
   serialize: (params) => ({ params: cloneImageState(params), type: "image" }),
-  selectedStateKey: "image",
   toManifestParams: manifestImageParams,
   runtime: {
     getTopologyKey: (layer) => ({
@@ -529,13 +419,12 @@ export const imageLayerAddon: EffectLayerAddon<"image", ImageState> = {
 
 export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
   cloneParams: cloneSpotState,
+  createDefaultParams: (context) => createDefaultSpotState(context?.centerDirection),
+  defaultBlendMode: "normal",
   displayName: "Spot",
   getDefaultName: () => "Spot",
-  iconName: "spot",
   load: (serialized) => cloneSpotState(serialized.params),
-  panelId: "spot",
   serialize: (params) => ({ params: cloneSpotState(params), type: "spot" }),
-  selectedStateKey: "spot",
   toManifestParams: manifestSpotParams,
   runtime: {
     getTopologyKey: (layer) => ({
@@ -568,13 +457,12 @@ export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
 
 export const starfieldLayerAddon: EffectLayerAddon<"starfield", StarfieldState> = {
   cloneParams: cloneStarfieldState,
+  createDefaultParams: createDefaultStarfieldState,
+  defaultBlendMode: "screen",
   displayName: "Starfield",
   getDefaultName: () => "Starfield",
-  iconName: "starfield",
   load: (serialized) => cloneStarfieldState(serialized.params),
-  panelId: "starfield",
   serialize: (params) => ({ params: cloneStarfieldState(params), type: "starfield" }),
-  selectedStateKey: "starfield",
   toManifestParams: manifestStarfieldParams,
   runtime: {
     getTopologyKey: (layer) => ({
@@ -588,12 +476,6 @@ export const starfieldLayerAddon: EffectLayerAddon<"starfield", StarfieldState> 
   },
   type: "starfield",
 };
-
-export const gradientLayerAdapter = gradientLayerAddon;
-export const fieldGradientLayerAdapter = fieldGradientLayerAddon;
-export const imageLayerAdapter = imageLayerAddon;
-export const spotLayerAdapter = spotLayerAddon;
-export const starfieldLayerAdapter = starfieldLayerAddon;
 
 export const builtInEffectLayerAddons = [
   gradientLayerAddon,
@@ -631,6 +513,16 @@ export function getEffectLayerAddons() {
   return Array.from(registeredEffectLayerAddons.values());
 }
 
+export function registerEffectLayerUi(
+  type: EffectLayerType,
+  ui: { Icon?: ComponentType; Panel?: ComponentType }
+) {
+  const addon = getEffectLayerAddon(type);
+
+  addon.Icon = ui.Icon;
+  addon.Panel = ui.Panel;
+}
+
 export function cloneEffectLayerParams(layer: EffectLayer): EffectLayer["params"] {
   return getEffectLayerAddon(layer.type).cloneParams(layer.params as never) as EffectLayer["params"];
 }
@@ -661,51 +553,15 @@ export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer 
 
 export function loadEffectLayer(serialized: SerializedEffectLayer): EffectLayer {
   const addon = getEffectLayerAddon(serialized.effect.type);
-  const baseLayer = {
+
+  return {
     blendMode: normalizeBlendMode(serialized.blendMode),
     enabled: serialized.enabled,
     id: serialized.id,
     locked: serialized.locked ?? false,
     name: serialized.name,
     opacity: serialized.opacity ?? 100,
-    type: serialized.effect.type,
-  };
-
-  if (serialized.effect.type === "gradient") {
-    return {
-      ...baseLayer,
-      params: addon.load(serialized.effect as never) as GradientState,
-      type: serialized.effect.type,
-    };
-  }
-
-  if (serialized.effect.type === "field-gradient") {
-    return {
-      ...baseLayer,
-      params: addon.load(serialized.effect as never) as FieldGradientState,
-      type: serialized.effect.type,
-    };
-  }
-
-  if (serialized.effect.type === "image") {
-    return {
-      ...baseLayer,
-      params: addon.load(serialized.effect as never) as ImageState,
-      type: serialized.effect.type,
-    };
-  }
-
-  if (serialized.effect.type === "starfield") {
-    return {
-      ...baseLayer,
-      params: addon.load(serialized.effect as never) as StarfieldState,
-      type: serialized.effect.type,
-    };
-  }
-
-  return {
-    ...baseLayer,
-    params: addon.load(serialized.effect as never) as SpotState,
+    params: addon.load(serialized.effect as never),
     type: serialized.effect.type,
   };
 }

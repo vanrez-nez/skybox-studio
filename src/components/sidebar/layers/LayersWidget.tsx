@@ -10,7 +10,7 @@ import {
   extractClosestEdge,
   type Edge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
-import { Blend, CircleDot, Ellipsis, Eye, EyeOff, Focus, ImagePlus, Lock, LockOpen, Palette, Sparkles, Stars, Trash2 } from "lucide-react";
+import { Blend, CircleDot, Ellipsis, Eye, EyeOff, Focus, Lock, LockOpen, Trash2 } from "lucide-react";
 
 import {
   ContextMenu,
@@ -46,22 +46,14 @@ import {
   getEffectLayerFocusTarget,
   type EffectLayer,
   type EffectLayerBlendMode,
-  type EffectLayerIconName,
 } from "@/effects/effect-layer";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/app";
 
 const LAYER_DRAG_TYPE = "effect-layer";
-const LAYER_ICONS = {
-  "field-gradient": Sparkles,
-  gradient: Palette,
-  image: ImagePlus,
-  spot: CircleDot,
-  starfield: Stars,
-} satisfies Record<EffectLayerIconName, typeof Palette>;
 
 function getLayerIcon(layer: EffectLayer) {
-  return LAYER_ICONS[getEffectLayerAddon(layer.type).iconName];
+  return getEffectLayerAddon(layer.type).Icon ?? CircleDot;
 }
 
 function isLayerDragData(data: Record<string, unknown>): data is {
@@ -546,7 +538,7 @@ export function LayersWidget() {
             <DropdownMenuContent align="start">
               <DropdownMenuGroup>
                 {getEffectLayerAddons().map((addon) => {
-                  const AddonIcon = LAYER_ICONS[addon.iconName];
+                  const AddonIcon = addon.Icon ?? CircleDot;
 
                   return (
                     <DropdownMenuItem

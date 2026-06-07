@@ -9,10 +9,6 @@ import {
   type ImageState,
   type LayersSlice,
 } from "@/store/modules/layers";
-import {
-  cloneStarfieldState,
-  type StarfieldState,
-} from "@/store/modules/layer-starfield";
 import { createSceneSlice, type SceneSlice } from "@/store/modules/scene";
 
 export type HistorySnapshot = Record<string, unknown>;
@@ -51,17 +47,12 @@ type PersistedWorkspacePreferences = Pick<
   | "activeView"
   | "cameraRotationMode"
   | "effectLayers"
-  | "fieldGradient"
-  | "gradient"
-  | "image"
   | "sceneRenderMode"
   | "selectedLayerId"
   | "skyGeometryType"
   | "showGroundPlaneHelper"
   | "showOrientationGizmo"
   | "showSkyGeometry"
-  | "spot"
-  | "starfield"
 >;
 
 let isStorageHistoryTransactionActive = false;
@@ -95,7 +86,7 @@ function omitRuntimeImageLayerData(effectLayers: WorkspaceStore["effectLayers"])
     layer.type === "image"
       ? {
           ...layer,
-          params: omitRuntimeImageData(layer.params),
+          params: omitRuntimeImageData(layer.params as ImageState),
         }
       : layer
   );
@@ -106,14 +97,6 @@ function normalizeEffectLayerLockState(effectLayers: WorkspaceStore["effectLayer
     ...layer,
     locked: layer.locked ?? false,
   }));
-}
-
-function hydrateSelectedStarfieldState(state: WorkspaceStore): StarfieldState {
-  const selectedLayer = state.effectLayers.find((layer) => layer.id === state.selectedLayerId);
-
-  return selectedLayer?.type === "starfield"
-    ? cloneStarfieldState(selectedLayer.params as StarfieldState)
-    : state.starfield;
 }
 
 function beginStorageHistoryTransaction() {
@@ -326,36 +309,26 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         activeView: state.activeView,
         cameraRotationMode: state.cameraRotationMode,
         effectLayers: omitRuntimeImageLayerData(state.effectLayers),
-        fieldGradient: state.fieldGradient,
-        gradient: state.gradient,
-        image: omitRuntimeImageData(state.image),
         sceneRenderMode: state.sceneRenderMode === "texture-baked" ? "live" : state.sceneRenderMode,
         selectedLayerId: state.selectedLayerId,
         skyGeometryType: state.skyGeometryType,
         showGroundPlaneHelper: state.showGroundPlaneHelper,
         showOrientationGizmo: state.showOrientationGizmo,
         showSkyGeometry: state.showSkyGeometry,
-        spot: state.spot,
-        starfield: state.starfield,
       }),
       merge: (persistedState, currentState) => {
         const nextState = {
           ...currentState,
           ...(persistedState as Partial<PersistedWorkspacePreferences>),
         };
-        const effectLayers = normalizeEffectLayerLockState(nextState.effectLayers);
-        const normalizedState = {
-          ...nextState,
-          effectLayers,
-        } as WorkspaceStore;
 
         return {
-          ...normalizedState,
-          starfield: hydrateSelectedStarfieldState(normalizedState),
-        };
+          ...nextState,
+          effectLayers: normalizeEffectLayerLockState(nextState.effectLayers),
+        } as WorkspaceStore;
       },
       storage: createTransactionAwareSessionStorage<PersistedWorkspacePreferences>(),
-      version: 2,
+      version: 3,
     }
   )
 );

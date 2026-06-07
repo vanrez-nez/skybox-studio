@@ -37,11 +37,15 @@ import {
   rotationFromPlacement,
   scaleFromPlacement,
 } from "@/runtime/image-placement-transform";
-import { useWorkspaceStore } from "@/store/app";
+import * as imageOps from "@/effects/layers/image/operations";
 import {
+  createDefaultImageState,
   IMAGE_PLACEMENT_TRANSACTION_SCOPE,
+  type ImagePlacement,
   type ImageState,
-} from "@/store/modules/layers";
+} from "@/effects/layers/image/state";
+import { useWorkspaceStore } from "@/store/app";
+import { useSelectedLayerParams } from "@/store/use-selected-layer";
 
 const DIALOG_PREVIEW_HEIGHT = 400;
 const DIALOG_PREVIEW_WIDTH = 600;
@@ -184,13 +188,26 @@ export function ImageWidget() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scaleLockedPairs, setScaleLockedPairs] = useState<LockPair[]>([SCALE_LOCK_PAIR]);
   const [zoom, setZoom] = useState(1);
-  const image = useWorkspaceStore((state) => state.image);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
-  const clearImage = useWorkspaceStore((state) => state.clearImage);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
-  const setImage = useWorkspaceStore((state) => state.setImage);
-  const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
+  const updateLayerParams = useWorkspaceStore((state) => state.updateLayerParams);
+  const updateSelectedLayerParams = useWorkspaceStore((state) => state.updateSelectedLayerParams);
+  const image = useSelectedLayerParams<ImageState>("image") ?? createDefaultImageState();
+  const clearImage = () =>
+    updateSelectedLayerParams((params) => imageOps.clearImageState(params as ImageState));
+  const setImage = (nextImage: ImageState) =>
+    updateSelectedLayerParams(() => imageOps.replaceImageState(nextImage));
+  const setImagePlacement = (
+    layerId: string,
+    placement: ImagePlacement | null,
+    options?: { history?: "checkpoint" | "skip" }
+  ) =>
+    updateLayerParams(
+      layerId,
+      (params) => imageOps.setImagePlacement(params as ImageState, placement),
+      options
+    );
   const hasImage = Boolean(image.src);
 
   const loadImageFile = async (file: File | null | undefined) => {
@@ -320,13 +337,19 @@ export function ImageWidget() {
       (effectLayer) => effectLayer.id === layerId && effectLayer.type === "image"
     );
 
-    if (!layer || layer.type !== "image" || !layer.params.placement) {
+    if (!layer || layer.type !== "image") {
+      return null;
+    }
+
+    const params = layer.params as ImageState;
+
+    if (!params.placement) {
       return null;
     }
 
     return {
       layerId,
-      placement: layer.params.placement,
+      placement: params.placement,
     };
   };
 

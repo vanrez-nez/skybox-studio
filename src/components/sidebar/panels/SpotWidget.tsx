@@ -32,12 +32,16 @@ import {
   radiusScaleFromSpot,
   spotFromPosition,
 } from "@/runtime/spot-transform";
+import * as spotOps from "@/effects/layers/spot/operations";
+import {
+  createDefaultSpotState,
+  type SpotColorMode,
+  type SpotLightParameterKey,
+  type SpotState,
+} from "@/effects/layers/spot/state";
+import type { GradientStop } from "@/effects/layers/primitives";
 import { useWorkspaceStore } from "@/store/app";
-import type {
-  GradientStop,
-  SpotColorMode,
-  SpotLightParameterKey,
-} from "@/store/modules/layers";
+import { useSelectedLayerParams } from "@/store/use-selected-layer";
 
 type SpotLightControl = {
   label: string;
@@ -300,18 +304,61 @@ export function SpotWidget() {
     move: (event: globalThis.PointerEvent) => void;
   } | null>(null);
   const [focusedStopField, setFocusedStopField] = useState<"location" | "opacity" | null>(null);
-  const spot = useWorkspaceStore((state) => state.spot);
-  const addSpotStop = useWorkspaceStore((state) => state.addSpotStop);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
-  const removeSpotStop = useWorkspaceStore((state) => state.removeSpotStop);
-  const selectSpotStop = useWorkspaceStore((state) => state.selectSpotStop);
-  const setSpotColorMode = useWorkspaceStore((state) => state.setSpotColorMode);
-  const setSpotLightColor = useWorkspaceStore((state) => state.setSpotLightColor);
-  const setSpotLightParameter = useWorkspaceStore((state) => state.setSpotLightParameter);
-  const setSpotPosition = useWorkspaceStore((state) => state.setSpotPosition);
-  const setSpotRadiusScale = useWorkspaceStore((state) => state.setSpotRadiusScale);
-  const updateSpotStop = useWorkspaceStore((state) => state.updateSpotStop);
+  const updateSelectedLayerParams = useWorkspaceStore((state) => state.updateSelectedLayerParams);
+  const spot = useSelectedLayerParams<SpotState>("spot") ?? createDefaultSpotState();
+  const getLatestSpot = (): SpotState | null => {
+    const state = useWorkspaceStore.getState();
+    const layer = state.effectLayers.find((effectLayer) => effectLayer.id === state.selectedLayerId);
+
+    return layer?.type === "spot" ? (layer.params as SpotState) : null;
+  };
+  const addSpotStop = (stop: Omit<GradientStop, "id" | "midpoint"> & { midpoint?: number }) =>
+    updateSelectedLayerParams((params) => spotOps.addSpotStop(params as SpotState, stop));
+  const removeSpotStop = (id: string) =>
+    updateSelectedLayerParams((params) => spotOps.removeSpotStop(params as SpotState, id));
+  const selectSpotStop = (id: string) =>
+    updateSelectedLayerParams((params) => spotOps.selectSpotStop(params as SpotState, id), {
+      history: "skip",
+    });
+  const setSpotColorMode = (mode: SpotColorMode) =>
+    updateSelectedLayerParams((params) => spotOps.setSpotColorMode(params as SpotState, mode));
+  const setSpotLightColor = (color: string, options?: { history?: "checkpoint" | "skip" }) =>
+    updateSelectedLayerParams(
+      (params) => spotOps.setSpotLightColor(params as SpotState, color),
+      options
+    );
+  const setSpotLightParameter = (
+    parameter: SpotLightParameterKey,
+    value: number,
+    options?: { history?: "checkpoint" | "skip" }
+  ) =>
+    updateSelectedLayerParams(
+      (params) => spotOps.setSpotLightParameter(params as SpotState, parameter, value),
+      options
+    );
+  const setSpotPosition = (
+    centerDirection: [number, number, number],
+    options?: { history?: "checkpoint" | "skip" }
+  ) =>
+    updateSelectedLayerParams(
+      (params) => spotOps.setSpotPosition(params as SpotState, centerDirection),
+      options
+    );
+  const setSpotRadiusScale = (radiusScale: number) =>
+    updateSelectedLayerParams((params) =>
+      spotOps.setSpotRadiusScale(params as SpotState, radiusScale)
+    );
+  const updateSpotStop = (
+    id: string,
+    update: Partial<Omit<GradientStop, "id">>,
+    options?: { history?: "checkpoint" | "skip" }
+  ) =>
+    updateSelectedLayerParams(
+      (params) => spotOps.updateSpotStop(params as SpotState, id, update),
+      options
+    );
   const selectedStop =
     spot.stops.find((stop) => stop.id === spot.selectedStopId) ?? spot.stops[0];
   const sortedStops = sortStops(spot.stops);
@@ -466,7 +513,8 @@ export function SpotWidget() {
         return;
       }
 
-      const latestStops = sortStops(useWorkspaceStore.getState().spot.stops);
+      const latestSpotState = getLatestSpot();
+      const latestStops = latestSpotState ? sortStops(latestSpotState.stops) : [];
       const latestCurrentStop = latestStops.find((stop) => stop.id === activeDrag.id);
       const latestCurrentIndex = latestCurrentStop ? latestStops.indexOf(latestCurrentStop) : -1;
       const latestNextStop = latestCurrentIndex >= 0 ? latestStops[latestCurrentIndex + 1] : undefined;
@@ -572,7 +620,12 @@ export function SpotWidget() {
   };
 
   const updatePosition = (position: Point2Value, options?: PointInputChangeOptions) => {
-    const latestSpot = useWorkspaceStore.getState().spot;
+    const latestSpot = getLatestSpot();
+
+    if (!latestSpot) {
+      return;
+    }
+
     const currentPosition = positionFromSpot(latestSpot);
     const nextPosition = mergeChangedPointValue(currentPosition, position, options);
 

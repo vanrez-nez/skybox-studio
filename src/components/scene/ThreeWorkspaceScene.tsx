@@ -10,6 +10,11 @@ import type {
 import { RotationGizmo } from "./RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
 import { getEffectLayerFocusTarget, type EffectLayer } from "@/effects/effect-layer";
+import type { ImageState } from "@/effects/layers/image/state";
+import type { SpotState } from "@/effects/layers/spot/state";
+import type { StarfieldState } from "@/effects/layers/starfield/state";
+import * as imageOps from "@/effects/layers/image/operations";
+import * as spotOps from "@/effects/layers/spot/operations";
 import { EditorSkyboxSync } from "./EditorSkyboxSync";
 import {
   createAngularDecalPlacement,
@@ -178,10 +183,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const selectEffectLayer = useWorkspaceStore((state) => state.selectEffectLayer);
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
-  const setImageAssetSource = useWorkspaceStore((state) => state.setImageAssetSource);
-  const setImagePlacement = useWorkspaceStore((state) => state.setImagePlacement);
   const setSceneLookDirection = useWorkspaceStore((state) => state.setSceneLookDirection);
-  const setSpotPosition = useWorkspaceStore((state) => state.setSpotPosition);
+  const updateLayerParams = useWorkspaceStore((state) => state.updateLayerParams);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
   const lastLayerFocusRequest = useWorkspaceStore((state) => state.lastLayerFocusRequest);
   const previewEffectLayerBlendMode = useWorkspaceStore(
@@ -441,10 +444,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           return;
         }
 
+        const imageParams = layer.params as ImageState;
+
         activeImageLayerIds.add(layer.id);
 
-        if (!layer.params.src && layer.params.assetId && !pendingAssetLoads.has(layer.id)) {
-          const assetId = layer.params.assetId;
+        if (!imageParams.src && imageParams.assetId && !pendingAssetLoads.has(layer.id)) {
+          const assetId = imageParams.assetId;
           const layerId = layer.id;
 
           pendingAssetLoads.add(layerId);
@@ -459,7 +464,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
               (effectLayer) => effectLayer.id === layerId
             );
 
-            if (currentLayer?.type !== "image" || currentLayer.params.assetId !== assetId) {
+            if (
+              currentLayer?.type !== "image" ||
+              (currentLayer.params as ImageState).assetId !== assetId
+            ) {
               return;
             }
 
@@ -475,25 +483,29 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
               assetId,
               src,
             });
-            setImageAssetSource(layerId, src);
+            updateLayerParams(
+              layerId,
+              (params) => imageOps.setImageSource(params as ImageState, src),
+              { history: "skip" }
+            );
           });
           return;
         }
 
-        if (!layer.params.src) {
+        if (!imageParams.src) {
           return;
         }
 
         const existingRecord = imageTextureRecords.get(layer.id);
 
-        if (existingRecord?.src === layer.params.src) {
+        if (existingRecord?.src === imageParams.src) {
           return;
         }
 
         existingRecord?.texture.dispose();
         const imageElement = new window.Image();
         const texture = new THREE.Texture(imageElement);
-        const src = layer.params.src;
+        const src = imageParams.src;
 
         configureImageTexture(texture);
         imageTextureRecords.set(layer.id, {
@@ -632,10 +644,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     const syncImagePlacements = () => {
       const unplacedImageLayer = effectLayersRef.current.find(
-        (layer): layer is Extract<EffectLayer, { type: "image" }> =>
+        (layer): layer is EffectLayer<ImageState> =>
           layer.type === "image" &&
-          Boolean(layer.params.src) &&
-          (!layer.params.placement || layer.params.placement.projection !== "angular-decal")
+          Boolean((layer.params as ImageState).src) &&
+          (!(layer.params as ImageState).placement ||
+            (layer.params as ImageState).placement?.projection !== "angular-decal")
       );
 
       if (unplacedImageLayer) {
@@ -648,7 +661,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         );
 
         if (placement) {
-          setImagePlacement(unplacedImageLayer.id, placement, previousPlacement ? { history: "skip" } : undefined);
+          updateLayerParams(
+            unplacedImageLayer.id,
+            (params) => imageOps.setImagePlacement(params as ImageState, placement),
+            previousPlacement ? { history: "skip" } : undefined
+          );
           return;
         }
       }
@@ -815,14 +832,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         }
 
         if (layer.type === "spot") {
-          if (spotContainsDirection(direction, layer.params)) {
+          if (spotContainsDirection(direction, layer.params as SpotState)) {
             hits.push({ layerId: layer.id, type: layer.type });
           }
           continue;
         }
 
         if (layer.type === "starfield") {
-          if (starfieldClipContainsDirection(direction, layer.params.clip)) {
+          if (starfieldClipContainsDirection(direction, (layer.params as StarfieldState).clip)) {
             hits.push({ layerId: layer.id, type: layer.type });
           }
           continue;
@@ -833,11 +850,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           continue;
         }
 
-        if (!layer.params.src || !layer.params.placement) {
+        const imageParams = layer.params as ImageState;
+
+        if (!imageParams.src || !imageParams.placement) {
           continue;
         }
 
-        const uv = projectDirectionToImageUv(direction, layer.params.placement);
+        const uv = projectDirectionToImageUv(direction, imageParams.placement);
 
         if (uv) {
           hits.push({ layerId: layer.id, type: layer.type, uv });
@@ -871,7 +890,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      setImagePlacement(pendingImagePlacementLayerId, pendingImagePlacement, { history: "skip" });
+      updateLayerParams(
+        pendingImagePlacementLayerId,
+        (params) => imageOps.setImagePlacement(params as ImageState, pendingImagePlacement),
+        { history: "skip" }
+      );
       pendingImagePlacementLayerId = "";
       pendingImagePlacement = null;
     };
@@ -948,7 +971,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         spotDragState.offsetY
       );
 
-      setSpotPosition(centerDirection, { history: "skip" });
+      updateLayerParams(
+        spotDragState.layerId,
+        (params) => spotOps.setSpotPosition(params as SpotState, centerDirection),
+        { history: "skip" }
+      );
       syncSkybox();
     };
 
@@ -1021,7 +1048,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       const hitLayer = effectLayersRef.current.find(
-        (layer): layer is Extract<EffectLayer, { type: "image" }> =>
+        (layer): layer is EffectLayer<ImageState> =>
           layer.id === hit.layerId && layer.type === "image"
       );
       const placement = hitLayer?.params.placement;
@@ -1059,7 +1086,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       const hitLayer = effectLayersRef.current.find(
-        (layer): layer is Extract<EffectLayer, { type: "spot" }> =>
+        (layer): layer is EffectLayer<SpotState> =>
           layer.id === hit.layerId && layer.type === "spot"
       );
 

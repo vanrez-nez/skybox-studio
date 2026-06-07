@@ -9,7 +9,6 @@ import {
   clampPercent,
   cloneEffectLayer,
   getHistoryPatch,
-  selectedLayerStatePatch,
   type HistoryUpdateOptions,
 } from "@/store/modules/layer-utils";
 
@@ -106,9 +105,6 @@ export function applyLayerOperationToState(
     effectLayers: state.effectLayers.map((effectLayer) =>
       effectLayer.id === operation.layerId ? normalizedNextLayer : effectLayer
     ),
-    ...(state.selectedLayerId === operation.layerId
-      ? selectedLayerStatePatch(normalizedNextLayer)
-      : {}),
     ...getHistoryPatch(state, options),
   };
 }

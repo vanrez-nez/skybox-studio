@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skybox Studio — demos</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #0b0f17;
+        color: #e6edf3;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+      }
+      main { max-width: 40rem; padding: 2rem; }
+      h1 { font-size: 1.4rem; }
+      a { color: #7dd3fc; }
+      ul { line-height: 1.9; }
+      code { background: #161b22; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Skybox Studio — standalone demos</h1>
+      <ul>
+        <li>
+          <a href="/scenario1.html">Scenario 1 — Exported image (no runtime)</a>
+          <br />Load an exported equirect PNG onto a cube skybox and a skydome with plain three.js.
+        </li>
+        <li>
+          <a href="/scenario2.html">Scenario 2 — Runtime (Live / Baked)</a>
+          <br />Load a project bundle (<code>manifest.json</code> + hashed assets) with the runtime
+          package; toggle Live and Baked modes.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

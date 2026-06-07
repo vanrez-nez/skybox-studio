@@ -17,6 +17,7 @@
     "@tanstack/hotkeys": "^0.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fflate": "^0.8.3",
     "lodash": "^4.18.1",
     "lucide-react": "^1.16.0",
     "radix-ui": "^1.4.3",

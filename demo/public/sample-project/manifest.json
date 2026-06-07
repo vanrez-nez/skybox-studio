@@ -1,0 +1,44 @@
+{
+  "composition": { "mode": "alpha-over", "order": "bottom-to-top" },
+  "geometry": { "type": "sphere" },
+  "version": 2,
+  "assets": {},
+  "nodes": [
+    {
+      "type": "field-gradient",
+      "id": "fg-1",
+      "name": "Aurora",
+      "enabled": true,
+      "opacity": 80,
+      "blendMode": "screen",
+      "params": {
+        "mode": "inverse-distance",
+        "frequency": 1.2,
+        "power": 2.2,
+        "amplitude": 0.18,
+        "anchors": [
+          { "color": "#3aa0ff", "x": 0.3, "y": 0.6 },
+          { "color": "#a36bff", "x": 0.7, "y": 0.45 },
+          { "color": "#2bd1c4", "x": 0.5, "y": 0.82 }
+        ]
+      }
+    },
+    {
+      "type": "gradient",
+      "id": "grad-1",
+      "name": "Sky",
+      "enabled": true,
+      "opacity": 100,
+      "blendMode": "normal",
+      "params": {
+        "mode": "linear",
+        "rotation": 0,
+        "stops": [
+          { "color": "#0b1020", "location": 0, "opacity": 100, "midpoint": 50 },
+          { "color": "#27406b", "location": 55, "opacity": 100, "midpoint": 50 },
+          { "color": "#7db1e8", "location": 100, "opacity": 100, "midpoint": 50 }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scenario 2 — Runtime (Live / Baked)</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+      #app { position: fixed; inset: 0; }
+      .toolbar {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: rgba(13, 17, 23, 0.85);
+        color: #e6edf3;
+        font-family: system-ui, sans-serif;
+        font-size: 12px;
+      }
+      .toolbar button {
+        background: #21262d;
+        color: #e6edf3;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      .toolbar button[data-active="true"] { background: #1f6feb; border-color: #1f6feb; }
+      .toolbar .sep { width: 1px; height: 18px; background: #30363d; }
+      .toolbar a { color: #7dd3fc; }
+      #status { color: #f0b429; min-width: 6rem; }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <button id="mode-live" data-active="true" type="button">Live</button>
+      <button id="mode-baked" type="button">Baked</button>
+      <span class="sep"></span>
+      <button id="geo-sphere" data-active="true" type="button">Sphere</button>
+      <button id="geo-box" type="button">Box</button>
+      <span class="sep"></span>
+      <button id="open" type="button">Open bundle folder…</button>
+      <span id="status"></span>
+      <a href="/index.html">← demos</a>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/scenario2.ts"></script>
+  </body>
+</html>

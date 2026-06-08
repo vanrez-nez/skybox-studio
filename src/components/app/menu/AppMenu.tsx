@@ -36,10 +36,11 @@ type AppMenuItem = {
   shortcut?: string[];
 };
 
-const fileMenuItems: AppMenuItem[] = [
-  { id: "file.export", label: "Export" },
-  { id: "file.load", label: "Load" },
+const fileExportItems: AppMenuItem[] = [
+  { id: "file.export.image", label: "Image" },
+  { id: "file.export.runtime", label: "Runtime" },
 ];
+const fileLoadItems: AppMenuItem[] = [{ id: "file.load", label: "Load" }];
 const LAYER_TRANSFORM_KEYBOARD_SCOPE = "layer-transform-keyboard";
 const LAYER_TRANSFORM_KEYBOARD_COMMIT_DELAY_MS = 300;
 const LAYER_POSITION_DIRECTIONS = [
@@ -69,7 +70,6 @@ const menuItems: Array<{
   {
     id: "file",
     label: "File",
-    items: fileMenuItems,
   },
   { id: "edit", label: "Edit" },
   { id: "layer", label: "Layer" },
@@ -468,6 +468,37 @@ export function AppMenu() {
     );
   }
 
+  function renderFileMenu() {
+    return (
+      <MenubarContent>
+        <MenubarSub>
+          <MenubarSubTrigger>Export</MenubarSubTrigger>
+          <MenubarSubContent>
+            {fileExportItems.map((menuItem) => (
+              <MenubarItem
+                key={menuItem.id}
+                disabled={menuItem.disabled}
+                onSelect={() => handleMenuCommand(menuItem.id)}
+              >
+                <span>{menuItem.label}</span>
+              </MenubarItem>
+            ))}
+          </MenubarSubContent>
+        </MenubarSub>
+        <MenubarSeparator />
+        {fileLoadItems.map((menuItem) => (
+          <MenubarItem
+            key={menuItem.id}
+            disabled={menuItem.disabled}
+            onSelect={() => handleMenuCommand(menuItem.id)}
+          >
+            <span>{menuItem.label}</span>
+          </MenubarItem>
+        ))}
+      </MenubarContent>
+    );
+  }
+
   function renderViewMenu() {
     return (
       <MenubarContent>
@@ -556,17 +587,19 @@ export function AppMenu() {
           >
             {item.label}
           </MenubarTrigger>
-          {item.id === "view"
-            ? renderViewMenu()
-            : item.id === "sky"
-              ? renderSkyMenu()
-              : item.id === "edit"
-                ? renderCommandMenu(editMenuItems)
-                : item.id === "layer"
-                  ? renderCommandMenu(layerMenuItems)
-                  : item.items
-                    ? renderCommandMenu(item.items)
-                    : null}
+          {item.id === "file"
+            ? renderFileMenu()
+            : item.id === "view"
+              ? renderViewMenu()
+              : item.id === "sky"
+                ? renderSkyMenu()
+                : item.id === "edit"
+                  ? renderCommandMenu(editMenuItems)
+                  : item.id === "layer"
+                    ? renderCommandMenu(layerMenuItems)
+                    : item.items
+                      ? renderCommandMenu(item.items)
+                      : null}
         </MenubarMenu>
       ))}
     </Menubar>

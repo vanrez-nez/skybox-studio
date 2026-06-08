@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three/webgpu";
 
 import { Button } from "@/components/ui/primitives/button";
+import { DialogClose, DialogFooter } from "@/components/ui/primitives/dialog";
 import { FieldGroup } from "@/components/ui/primitives/field-group";
 import {
   Select,
@@ -682,11 +683,16 @@ export function BakePreview() {
         </p>
       ) : null}
 
-      <div className="flex justify-end">
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button type="button" variant="ghost">
+            Cancel
+          </Button>
+        </DialogClose>
         <Button disabled={!canSave} onClick={() => void handleSave()} type="button">
           {isSaving ? "Saving…" : `Save ${currentExporter?.extension.toUpperCase() ?? ""}`.trim()}
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }

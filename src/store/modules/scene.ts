@@ -5,7 +5,8 @@ export type MenuId = "file" | "edit" | "layer" | "sky" | "view";
 export type MenuCommandId =
   | "edit.redo"
   | "edit.undo"
-  | "file.export"
+  | "file.export.image"
+  | "file.export.runtime"
   | "file.load"
   | "layer.delete"
   | "layer.focus"

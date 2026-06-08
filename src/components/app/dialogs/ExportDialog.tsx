@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/primitives/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/primitives/dialog";
@@ -42,8 +45,8 @@ function ProjectBundleExport() {
   };
 
   return (
-    <div className="flex items-center justify-between gap-3 border-t pt-4">
-      <div className="flex flex-col">
+    <Fragment>
+      <div className="flex flex-col gap-1">
         <span className="text-sm">Project bundle (.zip)</span>
         <span className="text-xs text-muted-foreground">
           manifest.json + hashed image assets for the standalone runtime.
@@ -54,22 +57,47 @@ function ProjectBundleExport() {
           </span>
         ) : null}
       </div>
-      <Button disabled={isExporting} onClick={handleExport} type="button" variant="secondary">
-        {isExporting ? <Loader2 className="animate-spin" /> : null}
-        Export project
-      </Button>
-    </div>
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button type="button" variant="ghost">
+            Cancel
+          </Button>
+        </DialogClose>
+        <Button disabled={isExporting} onClick={handleExport} type="button">
+          {isExporting ? <Loader2 className="animate-spin" /> : null}
+          Export project
+        </Button>
+      </DialogFooter>
+    </Fragment>
   );
 }
 
-export function ExportDialog({ onOpenChange, open }: ExportDialogProps) {
+export function ImageExportDialog({ onOpenChange, open }: ExportDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-auto max-w-none sm:max-w-none">
         <DialogHeader>
-          <DialogTitle>Export</DialogTitle>
+          <DialogTitle>Export Image</DialogTitle>
+          <DialogDescription>
+            Bake the current sky to an equirectangular texture.
+          </DialogDescription>
         </DialogHeader>
         <BakePreview />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function RuntimeExportDialog({ onOpenChange, open }: ExportDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Export Runtime</DialogTitle>
+          <DialogDescription>
+            Package the project for the standalone runtime.
+          </DialogDescription>
+        </DialogHeader>
         <ProjectBundleExport />
       </DialogContent>
     </Dialog>

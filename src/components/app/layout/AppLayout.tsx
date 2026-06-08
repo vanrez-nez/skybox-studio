@@ -5,7 +5,7 @@ import { Tabs } from "@/components/ui/primitives/tabs";
 import { WorkspaceViewport } from "@/components/scene/WorkspaceViewport";
 import { useWorkspaceStore } from "@/store/app";
 import type { WorkspaceView } from "@/store/modules/scene";
-import { ExportDialog } from "../dialogs/ExportDialog";
+import { ImageExportDialog, RuntimeExportDialog } from "../dialogs/ExportDialog";
 import { AppFooter } from "./AppFooter";
 import { ViewTabs } from "./ViewTabs";
 import { WorkspaceSplitLayout } from "./WorkspaceSplitLayout";
@@ -14,11 +14,14 @@ export function AppLayout() {
   const activeView = useWorkspaceStore((state) => state.activeView);
   const lastMenuEvent = useWorkspaceStore((state) => state.lastMenuEvent);
   const setActiveView = useWorkspaceStore((state) => state.setActiveView);
-  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isImageExportOpen, setIsImageExportOpen] = useState(false);
+  const [isRuntimeExportOpen, setIsRuntimeExportOpen] = useState(false);
 
   useEffect(() => {
-    if (lastMenuEvent?.id === "file.export") {
-      setIsExportOpen(true);
+    if (lastMenuEvent?.id === "file.export.image") {
+      setIsImageExportOpen(true);
+    } else if (lastMenuEvent?.id === "file.export.runtime") {
+      setIsRuntimeExportOpen(true);
     }
   }, [lastMenuEvent?.id, lastMenuEvent?.issuedAt]);
 
@@ -41,7 +44,8 @@ export function AppLayout() {
         <AppFooter />
       </Tabs>
 
-      <ExportDialog open={isExportOpen} onOpenChange={setIsExportOpen} />
+      <ImageExportDialog open={isImageExportOpen} onOpenChange={setIsImageExportOpen} />
+      <RuntimeExportDialog open={isRuntimeExportOpen} onOpenChange={setIsRuntimeExportOpen} />
     </>
   );
 }

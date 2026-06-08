@@ -1,34 +1,38 @@
-import type { ReactNode } from "react";
-import { CircleQuestionMark, X } from "lucide-react";
-import { HoverCard as HoverCardPrimitive, Popover as PopoverPrimitive } from "radix-ui";
+import { type MouseEvent, useMemo, useRef, useState } from "react";
+import { CircleQuestionMark } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/primitives/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/primitives/dialog";
 import { cn } from "@/lib/utils";
+import {
+  Widget,
+  type WidgetOwnerRect,
+  type WidgetPosition,
+} from "@/components/sidebar/panels/Widget";
 
 type HelpHintSize = "xs" | "md" | "lg";
-type HelpHintTrigger = "hover" | "click";
-type HelpHintSide = "top" | "right" | "bottom" | "left";
-type HelpHintAlign = "start" | "center" | "end";
+type HelpHintTrigger = "hover" | "click" | "both";
 
 type HelpHintProps = {
-  /** Button aria-label (default "More info"). */
-  ariaLabel?: string;
-  /** Extra classes for the trigger button. */
-  className?: string;
-  /** Extra classes for the floating panel. */
-  contentClassName?: string;
-  /** Markdown body. */
-  content: string;
-  align?: HelpHintAlign;
-  side?: HelpHintSide;
+  /** Raw markdown doc (frontmatter `title` + `description`, then the full body). Import via `?raw`. */
+  doc: string;
+  /** Interaction: hover shows the description, click opens the dialog. Default "both". */
+  trigger?: HelpHintTrigger;
   /** Button size; defaults to "md". */
   size?: HelpHintSize;
-  /** Optional panel title. */
-  title?: string;
-  /** "hover" (default) shows on hover with no close; "click" opens a larger panel with an X close. */
-  trigger?: HelpHintTrigger;
+  ariaLabel?: string;
+  className?: string;
+  /** Extra classes for the dialog content. */
+  contentClassName?: string;
 };
 
 const SIZE_TO_BUTTON: Record<HelpHintSize, "icon-xs" | "icon-sm" | "icon-lg"> = {
@@ -37,13 +41,20 @@ const SIZE_TO_BUTTON: Record<HelpHintSize, "icon-xs" | "icon-sm" | "icon-lg"> = 
   xs: "icon-xs",
 };
 
-const PANEL_CLASS =
-  "z-50 rounded-md border bg-popover p-3 text-popover-foreground shadow-md outline-none " +
-  "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 " +
-  "data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95";
+// A touch larger than each button size's default glyph, so the "?" reads clearly.
+const SIZE_TO_ICON: Record<HelpHintSize, string> = {
+  lg: "size-6",
+  md: "size-5",
+  xs: "size-4",
+};
 
-// Compact markdown styling (the project has no `prose` plugin). Links open in a new tab; raw HTML
-// is not rendered (react-markdown sanitizes by default).
+// Fixed hover-panel width so the text never re-wraps, and a matching viewport pad so we can
+// pre-clamp the open position (the Widget would otherwise re-clamp after measuring → a visible jump
+// when the button sits near the right edge).
+const HOVER_PANEL_WIDTH = 288;
+const VIEWPORT_PADDING = 12;
+
+// Compact markdown styling (no `prose` plugin). Links open in a new tab; raw HTML is sanitized.
 const MARKDOWN_COMPONENTS = {
   a: ({ className, ...props }: { className?: string }) => (
     <a
@@ -60,13 +71,13 @@ const MARKDOWN_COMPONENTS = {
     />
   ),
   h1: ({ className, ...props }: { className?: string }) => (
-    <h1 className={cn("mt-2 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
+    <h1 className={cn("mt-3 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
   ),
   h2: ({ className, ...props }: { className?: string }) => (
-    <h2 className={cn("mt-2 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
+    <h2 className={cn("mt-3 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
   ),
   h3: ({ className, ...props }: { className?: string }) => (
-    <h3 className={cn("mt-2 mb-1 text-xs font-semibold first:mt-0", className)} {...props} />
+    <h3 className={cn("mt-2 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
   ),
   li: ({ className, ...props }: { className?: string }) => (
     <li className={cn("my-0.5", className)} {...props} />
@@ -75,12 +86,12 @@ const MARKDOWN_COMPONENTS = {
     <ol className={cn("my-1 list-decimal pl-4", className)} {...props} />
   ),
   p: ({ className, ...props }: { className?: string }) => (
-    <p className={cn("my-1 first:mt-0 last:mb-0", className)} {...props} />
+    <p className={cn("my-1.5 first:mt-0 last:mb-0", className)} {...props} />
   ),
   pre: ({ className, ...props }: { className?: string }) => (
     <pre
       className={cn(
-        "my-1 overflow-x-auto rounded bg-muted p-2 text-xs [&>code]:bg-transparent [&>code]:p-0",
+        "my-1.5 overflow-x-auto rounded bg-muted p-2 text-xs [&>code]:bg-transparent [&>code]:p-0",
         className
       )}
       {...props}
@@ -91,9 +102,53 @@ const MARKDOWN_COMPONENTS = {
   ),
 };
 
+type ParsedHelpDoc = { body: string; description: string; title: string };
+
+// Minimal frontmatter parser for our controlled help docs: a leading `---` block of `key: value`
+// lines (we read `title` + `description`); everything after is the markdown body.
+function parseHelpDoc(raw: string): ParsedHelpDoc {
+  const match = /^---\s*\n([\s\S]*?)\n---\s*\n?/.exec(raw);
+
+  if (!match) {
+    return { body: raw.trim(), description: "", title: "" };
+  }
+
+  let title = "";
+  let description = "";
+
+  for (const line of match[1].split("\n")) {
+    const field = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line.trim());
+
+    if (!field) {
+      continue;
+    }
+
+    const value = field[2].trim().replace(/^["']|["']$/g, "");
+
+    if (field[1] === "title") {
+      title = value;
+    } else if (field[1] === "description") {
+      description = value;
+    }
+  }
+
+  return { body: raw.slice(match[0].length).trim(), description, title };
+}
+
+function rectToOwnerRect(rect: DOMRect): WidgetOwnerRect {
+  return {
+    bottom: rect.bottom,
+    height: rect.height,
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    width: rect.width,
+  };
+}
+
 function HintMarkdown({ content }: { content: string }) {
   return (
-    <div className="text-xs leading-relaxed break-words">
+    <div className="text-sm leading-relaxed break-words">
       <Markdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]}>
         {content}
       </Markdown>
@@ -101,102 +156,94 @@ function HintMarkdown({ content }: { content: string }) {
   );
 }
 
-function HintPanel({
-  closeSlot,
-  content,
-  title,
-}: {
-  closeSlot?: ReactNode;
-  content: string;
-  title?: string;
-}) {
-  const hasHeader = Boolean(title) || Boolean(closeSlot);
-
-  return (
-    <>
-      {hasHeader ? (
-        <div className="mb-2 flex items-start justify-between gap-3">
-          {title ? <div className="text-sm leading-tight font-medium">{title}</div> : <span />}
-          {closeSlot}
-        </div>
-      ) : null}
-      <HintMarkdown content={content} />
-    </>
-  );
-}
-
 export function HelpHint({
-  align = "center",
   ariaLabel = "More info",
   className,
-  content,
   contentClassName,
-  side = "top",
+  doc,
   size = "md",
-  title,
-  trigger = "hover",
+  trigger = "both",
 }: HelpHintProps) {
-  const triggerButton = (
+  const { body, description, title } = useMemo(() => parseHelpDoc(doc), [doc]);
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const [position, setPosition] = useState<WidgetPosition>({ x: 12, y: 12 });
+  const [ownerRect, setOwnerRect] = useState<WidgetOwnerRect | null>(null);
+  const leaveTimerRef = useRef<number>(0);
+
+  const showHover = (trigger === "hover" || trigger === "both") && Boolean(description);
+  const showDialog = trigger === "click" || trigger === "both";
+
+  // Open the hover description below the button, anchoring the (bordered) callout to it — reuses the
+  // same floating Widget the FloatingColorPicker uses, so the callout style/logic is identical.
+  const openHover = (event: MouseEvent<HTMLButtonElement>) => {
+    window.clearTimeout(leaveTimerRef.current);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const maxX = Math.max(VIEWPORT_PADDING, window.innerWidth - HOVER_PANEL_WIDTH - VIEWPORT_PADDING);
+
+    // Pre-clamp so the panel opens at its final x (no post-measure jump near the right edge).
+    setPosition({ x: Math.min(Math.max(rect.left, VIEWPORT_PADDING), maxX), y: rect.bottom + 6 });
+    setOwnerRect(rectToOwnerRect(rect));
+    setHoverOpen(true);
+  };
+
+  const closeHover = () => {
+    window.clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = window.setTimeout(() => setHoverOpen(false), 80);
+  };
+
+  const button = (
     <Button
       aria-label={ariaLabel}
       className={cn("rounded-full text-muted-foreground", className)}
+      onClick={showHover ? () => setHoverOpen(false) : undefined}
+      onMouseEnter={showHover ? openHover : undefined}
+      onMouseLeave={showHover ? closeHover : undefined}
       size={SIZE_TO_BUTTON[size]}
       type="button"
       variant="ghost"
     >
-      <CircleQuestionMark />
+      <CircleQuestionMark className={SIZE_TO_ICON[size]} />
     </Button>
   );
 
-  if (trigger === "click") {
+  const hoverPanel =
+    showHover && hoverOpen ? (
+      <Widget
+        contentClassName="min-h-0 p-3"
+        floatingOwnerRect={ownerRect ?? undefined}
+        floatingPosition={position}
+        showFloatingOwnerCallout
+        style={{ width: HOVER_PANEL_WIDTH }}
+        variant="floating"
+      >
+        <p className="leading-relaxed">{description}</p>
+      </Widget>
+    ) : null;
+
+  if (!showDialog) {
     return (
-      <PopoverPrimitive.Root>
-        <PopoverPrimitive.Trigger asChild>{triggerButton}</PopoverPrimitive.Trigger>
-        <PopoverPrimitive.Portal>
-          <PopoverPrimitive.Content
-            align={align}
-            className={cn(PANEL_CLASS, "max-w-sm", contentClassName)}
-            collisionPadding={8}
-            side={side}
-            sideOffset={6}
-          >
-            <HintPanel
-              closeSlot={
-                <PopoverPrimitive.Close asChild>
-                  <Button
-                    aria-label="Close"
-                    className="-mt-1 -mr-1 rounded-full text-muted-foreground"
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <X />
-                  </Button>
-                </PopoverPrimitive.Close>
-              }
-              content={content}
-              title={title}
-            />
-          </PopoverPrimitive.Content>
-        </PopoverPrimitive.Portal>
-      </PopoverPrimitive.Root>
+      <>
+        {button}
+        {hoverPanel}
+      </>
     );
   }
 
   return (
-    <HoverCardPrimitive.Root closeDelay={120} openDelay={120}>
-      <HoverCardPrimitive.Trigger asChild>{triggerButton}</HoverCardPrimitive.Trigger>
-      <HoverCardPrimitive.Portal>
-        <HoverCardPrimitive.Content
-          align={align}
-          className={cn(PANEL_CLASS, "max-w-xs", contentClassName)}
-          collisionPadding={8}
-          side={side}
-          sideOffset={6}
-        >
-          <HintPanel content={content} title={title} />
-        </HoverCardPrimitive.Content>
-      </HoverCardPrimitive.Portal>
-    </HoverCardPrimitive.Root>
+    <Dialog>
+      <DialogTrigger asChild>{button}</DialogTrigger>
+      {hoverPanel}
+      <DialogContent className={cn("max-w-lg", contentClassName)}>
+        <DialogHeader>
+          <DialogTitle>{title || "Help"}</DialogTitle>
+          {description ? (
+            <DialogDescription className="sr-only">{description}</DialogDescription>
+          ) : null}
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto pr-1">
+          <HintMarkdown content={body} />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

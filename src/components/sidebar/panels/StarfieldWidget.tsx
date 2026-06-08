@@ -1,5 +1,7 @@
+import starfieldQualityHelp from "@/help/starfield-quality.md?raw";
 import { FieldGradientGroup } from "@/components/ui/composables/field-gradient-group";
 import { FloatingColorPicker } from "@/components/ui/composables/FloatingColorPicker";
+import { HelpHint } from "@/components/ui/composables/help-hint";
 import { FieldGroup } from "@/components/ui/primitives/field-group";
 import {
   Select,
@@ -351,26 +353,37 @@ export function StarfieldWidget() {
       <div className="widget-inline-fields">
         <div className="widget-field widget-field-mode">
           <span className="text-xs">Quality</span>
-          <Select
-            onValueChange={(value) => setQuality(value as StarfieldQuality)}
-            value={starfield.quality}
-          >
-            <SelectTrigger
-              aria-label="Starfield quality"
-              className="w-full bg-background text-xs"
-              size="xs"
+          <div className="flex min-w-0 items-center gap-1">
+            <Select
+              onValueChange={(value) => setQuality(value as StarfieldQuality)}
+              value={starfield.quality}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem className="text-xs" value="medium">
-                Medium
-              </SelectItem>
-              <SelectItem className="text-xs" value="high">
-                High
-              </SelectItem>
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                aria-label="Starfield quality"
+                className="min-w-0 flex-1 bg-background text-xs"
+                size="xs"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem className="text-xs" value="low">
+                  Low
+                </SelectItem>
+                <SelectItem className="text-xs" value="medium">
+                  Medium
+                </SelectItem>
+                <SelectItem className="text-xs" value="high">
+                  High
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <HelpHint
+              ariaLabel="How starfield quality works"
+              className="shrink-0"
+              doc={starfieldQualityHelp}
+              size="xs"
+            />
+          </div>
         </div>
       </div>
 

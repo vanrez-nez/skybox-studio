@@ -162,6 +162,12 @@ type LdrBake = { data: Uint8ClampedArray; height: number; width: number };
 
 const EXPORTERS = listSkyboxExporters();
 
+function defaultExporterSelects(formatId: string): Record<string, string> {
+  return Object.fromEntries(
+    (getSkyboxExporter(formatId)?.selects ?? []).map((select) => [select.id, select.default])
+  );
+}
+
 export function BakePreview() {
   const [error, setError] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -174,6 +180,9 @@ export function BakePreview() {
   const [preset, setPreset] = useState(DEFAULT_PRESET.value);
   const [format, setFormat] = useState(DEFAULT_EXPORTER_ID);
   const [quality, setQuality] = useState(1);
+  const [exporterSelects, setExporterSelects] = useState<Record<string, string>>(() =>
+    defaultExporterSelects(DEFAULT_EXPORTER_ID)
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [gpuReady, setGpuReady] = useState(true);
   const requestIdRef = useRef(0);
@@ -463,6 +472,7 @@ export function BakePreview() {
   function handleFormatChange(value: string) {
     setFormat(value);
     setQuality(getSkyboxExporter(value)?.quality?.default ?? 1);
+    setExporterSelects(defaultExporterSelects(value));
   }
 
   async function handleSave() {
@@ -484,29 +494,34 @@ export function BakePreview() {
 
         const starfieldTextures = bakeStarfieldTextures(gpu.starfieldService, manifest, exportWidth);
         const imageTextures = await loadSkyboxImageTextures(manifest);
-        const { dispose, target } = gpu.skyboxService.bakeRenderTarget(manifest, {
-          // EXRExporter flips scanlines unconditionally (it assumes WebGL bottom-up readback);
-          // our WebGPU readback is top-down, so pre-flip here to cancel it and keep the EXR upright.
-          flipY: true,
-          height: exportHeight,
-          hdr: true,
-          imageTextures,
-          starfieldTextures,
-          width: exportWidth,
-        });
 
         setIsSaving(true);
 
         try {
-          const blob = await exporter.encode({
-            kind: "hdr",
-            renderTarget: target,
-            renderer: gpu.renderer,
-          });
+          // The exporter decides the target precision (half/full) from its own options and disposes
+          // the target it requests. We just supply the bake closure + texture inputs.
+          const blob = await exporter.encode(
+            {
+              kind: "hdr",
+              renderer: gpu.renderer,
+              createTarget: ({ float }) =>
+                gpu.skyboxService.bakeRenderTarget(manifest, {
+                  // EXRExporter flips scanlines unconditionally (assumes WebGL bottom-up readback);
+                  // our WebGPU readback is top-down, so pre-flip here to keep the EXR upright.
+                  flipY: true,
+                  float,
+                  hdr: true,
+                  height: exportHeight,
+                  imageTextures,
+                  starfieldTextures,
+                  width: exportWidth,
+                }),
+            },
+            { selects: exporterSelects }
+          );
 
           downloadBlob(blob, `skybox-studio-${formatExportTimestamp()}.${exporter.extension}`);
         } finally {
-          dispose();
           disposeSkyboxImageTextures(imageTextures);
           setIsSaving(false);
         }
@@ -615,9 +630,36 @@ export function BakePreview() {
           </div>
         ) : null}
 
+        {currentExporter?.selects?.map((select) => (
+          <div className="flex items-center gap-3" key={select.id}>
+            <span className="w-20 shrink-0 text-xs text-muted-foreground">{select.label}</span>
+            <Select
+              onValueChange={(value) =>
+                setExporterSelects((current) => ({ ...current, [select.id]: value }))
+              }
+              value={exporterSelects[select.id] ?? select.default}
+            >
+              <SelectTrigger
+                aria-label={`EXR ${select.label}`}
+                className="flex-1 bg-background text-xs"
+                size="sm"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {select.options.map((option) => (
+                  <SelectItem className="text-xs" key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+
         {currentExporter?.hdr ? (
           <span className="text-[0.6875rem] text-muted-foreground">
-            HDR · linear half-float. Preview shown in SDR.
+            HDR · linear float. Preview shown in SDR.
           </span>
         ) : null}
       </FieldGroup>

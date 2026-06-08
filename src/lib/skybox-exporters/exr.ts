@@ -1,26 +1,66 @@
-import { HalfFloatType } from "three";
-import { EXRExporter } from "three/addons/exporters/EXRExporter.js";
+import { FloatType, HalfFloatType } from "three";
+import {
+  EXRExporter,
+  NO_COMPRESSION,
+  ZIP_COMPRESSION,
+  ZIPS_COMPRESSION,
+} from "three/addons/exporters/EXRExporter.js";
 
 import type { SkyboxImageExporter } from "./types";
 
 const exporter = new EXRExporter();
+
+const COMPRESSION_BY_ID: Record<string, number> = {
+  none: NO_COMPRESSION,
+  zip: ZIP_COMPRESSION,
+  zips: ZIPS_COMPRESSION,
+};
 
 export const exrExporter: SkyboxImageExporter = {
   extension: "exr",
   hdr: true,
   id: "exr",
   label: "EXR (HDR)",
-  encode: async (source) => {
+  selects: [
+    {
+      default: "half",
+      id: "dataType",
+      label: "Data type",
+      options: [
+        { label: "Half (16-bit)", value: "half" },
+        { label: "Full (32-bit)", value: "full" },
+      ],
+    },
+    {
+      default: "zip",
+      id: "compression",
+      label: "Compression",
+      options: [
+        { label: "ZIP (16-line blocks)", value: "zip" },
+        { label: "ZIPS (single scanline)", value: "zips" },
+        { label: "None", value: "none" },
+      ],
+    },
+  ],
+  encode: async (source, options) => {
     if (source.kind !== "hdr") {
-      throw new Error("EXR export expects an HDR float render target.");
+      throw new Error("EXR export expects an HDR render target source.");
     }
 
-    // three 0.184's EXRExporter accepts (renderer, renderTarget, options) for WebGLRenderer or
-    // WebGPURenderer; the float render target carries the linear HDR pixels.
-    const bytes = await exporter.parse(source.renderer as never, source.renderTarget as never, {
-      type: HalfFloatType,
-    });
+    const useFloat = options?.selects?.dataType === "full";
+    const compression = COMPRESSION_BY_ID[options?.selects?.compression ?? "zip"] ?? ZIP_COMPRESSION;
+    // Bake at the requested precision so "Full" is a true 32-bit render, not an upcast half bake.
+    const baked = source.createTarget({ float: useFloat });
 
-    return new Blob([bytes], { type: "image/x-exr" });
+    try {
+      const bytes = await exporter.parse(source.renderer as never, baked.target as never, {
+        compression,
+        type: useFloat ? FloatType : HalfFloatType,
+      });
+
+      return new Blob([bytes], { type: "image/x-exr" });
+    } finally {
+      baked.dispose();
+    }
   },
 };

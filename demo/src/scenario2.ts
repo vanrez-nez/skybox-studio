@@ -3,15 +3,17 @@
 // Skybox material; Baked = the whole manifest flattened to one equirect texture.
 import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { Skybox, createBakedSkyboxTexture } from "skybox-studio-runtime";
-
 import {
-  collectImageLayers,
+  Skybox,
+  createBakedSkyboxTexture,
   loadBundleFromDirectory,
   loadBundleFromUrl,
+  loadBundleFromZip,
+  loadSkyboxImageTextures,
   rehydrateImagePixels,
   type Bundle,
-} from "./manifest-loader";
+  type LoadProgress,
+} from "skybox-studio-runtime";
 
 const BAKE_WIDTH = 1024;
 const BUNDLE_BASE = new URL("sample-project/", window.location.href).href;
@@ -22,6 +24,8 @@ const bakedButton = document.getElementById("mode-baked") as HTMLButtonElement;
 const sphereButton = document.getElementById("geo-sphere") as HTMLButtonElement;
 const boxButton = document.getElementById("geo-box") as HTMLButtonElement;
 const openButton = document.getElementById("open") as HTMLButtonElement;
+const openZipButton = document.getElementById("open-zip") as HTMLButtonElement;
+const zipInput = document.getElementById("zip-input") as HTMLInputElement;
 const statusEl = document.getElementById("status") as HTMLSpanElement;
 
 const renderer = new THREE.WebGPURenderer({ antialias: true });
@@ -74,24 +78,17 @@ function syncButtons() {
   boxButton.dataset.active = String(geometry === "box");
 }
 
-async function loadImageTextures(current: Bundle): Promise<Record<string, THREE.Texture>> {
-  const loader = new THREE.TextureLoader();
-  const textures: Record<string, THREE.Texture> = {};
-
-  for (const layer of collectImageLayers(current.manifest)) {
-    if (!layer.params.src) {
-      continue;
-    }
-
-    const texture = await loader.loadAsync(current.resolveAssetUrl(layer.params.src));
-
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.flipY = false;
-    texture.needsUpdate = true;
-    textures[layer.id] = texture;
+function reportProgress(event: LoadProgress) {
+  if (event.total > 0) {
+    setStatus(`Loading assets ${event.loaded}/${event.total}…`);
   }
+}
 
-  return textures;
+async function loadImageTextures(current: Bundle): Promise<Record<string, THREE.Texture>> {
+  // Reuse the runtime loader (wraps THREE.TextureLoader) so progress is reported for every source.
+  const textures = await loadSkyboxImageTextures(current, { onProgress: reportProgress });
+
+  return Object.fromEntries(textures) as Record<string, THREE.Texture>;
 }
 
 function disposeSkybox() {
@@ -184,6 +181,31 @@ openButton.addEventListener("click", async () => {
     if ((error as { name?: string }).name !== "AbortError") {
       setStatus(error instanceof Error ? error.message : String(error));
     }
+  }
+});
+
+openZipButton.addEventListener("click", () => {
+  zipInput.click();
+});
+
+zipInput.addEventListener("change", async () => {
+  const file = zipInput.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    setStatus("Unzipping…");
+    bundle?.dispose();
+    bundle = await loadBundleFromZip(file);
+    geometry = bundle.manifest.geometry?.type ?? "sphere";
+    syncButtons();
+    await rebuild();
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : String(error));
+  } finally {
+    zipInput.value = "";
   }
 });
 

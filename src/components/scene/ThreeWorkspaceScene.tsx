@@ -45,7 +45,10 @@ type SceneLayerHit = {
   uv?: ImageProjectionUv;
 };
 
-const INITIAL_CAMERA_ROTATION = new THREE.Euler(0.08, -0.35, 0, "YXZ");
+// Canonical front view at startup: identity rotation looks down -Z, so +X grows to the right and +Y
+// up (matching the orientation gizmo). The equirect export is centered on this same -Z forward, so
+// the editor's default view and the exported image share the same center.
+const INITIAL_CAMERA_ROTATION = new THREE.Euler(0, 0, 0, "YXZ");
 const AXIS_ANIMATION_DURATION_MS = 320;
 const AXIS_TOGGLE_DOT_THRESHOLD = 0.985;
 

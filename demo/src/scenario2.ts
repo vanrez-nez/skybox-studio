@@ -222,6 +222,10 @@ window.addEventListener("resize", resize);
 
 function tick() {
   controls.update();
+  // Keep the skydome centered on the camera so it always surrounds us — OrbitControls orbits the
+  // camera at a radius around the origin, which would otherwise leave it sitting on/outside the
+  // unit-sphere dome (rendering it as a ball with black corners).
+  skybox?.position.copy(camera.position);
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }

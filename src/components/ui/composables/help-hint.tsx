@@ -1,8 +1,7 @@
 import { type MouseEvent, useMemo, useRef, useState } from "react";
 import { CircleQuestionMark } from "lucide-react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
+import { MarkdownContent } from "@/components/ui/composables/markdown-content";
 import { Button } from "@/components/ui/primitives/button";
 import {
   Dialog,
@@ -54,54 +53,6 @@ const SIZE_TO_ICON: Record<HelpHintSize, string> = {
 const HOVER_PANEL_WIDTH = 288;
 const VIEWPORT_PADDING = 12;
 
-// Compact markdown styling (no `prose` plugin). Links open in a new tab; raw HTML is sanitized.
-const MARKDOWN_COMPONENTS = {
-  a: ({ className, ...props }: { className?: string }) => (
-    <a
-      className={cn("font-medium text-primary underline underline-offset-2", className)}
-      rel="noreferrer"
-      target="_blank"
-      {...props}
-    />
-  ),
-  code: ({ className, ...props }: { className?: string }) => (
-    <code
-      className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]", className)}
-      {...props}
-    />
-  ),
-  h1: ({ className, ...props }: { className?: string }) => (
-    <h1 className={cn("mt-3 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
-  ),
-  h2: ({ className, ...props }: { className?: string }) => (
-    <h2 className={cn("mt-3 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
-  ),
-  h3: ({ className, ...props }: { className?: string }) => (
-    <h3 className={cn("mt-2 mb-1 text-sm font-semibold first:mt-0", className)} {...props} />
-  ),
-  li: ({ className, ...props }: { className?: string }) => (
-    <li className={cn("my-0.5", className)} {...props} />
-  ),
-  ol: ({ className, ...props }: { className?: string }) => (
-    <ol className={cn("my-1 list-decimal pl-4", className)} {...props} />
-  ),
-  p: ({ className, ...props }: { className?: string }) => (
-    <p className={cn("my-1.5 first:mt-0 last:mb-0", className)} {...props} />
-  ),
-  pre: ({ className, ...props }: { className?: string }) => (
-    <pre
-      className={cn(
-        "my-1.5 overflow-x-auto rounded bg-muted p-2 text-xs [&>code]:bg-transparent [&>code]:p-0",
-        className
-      )}
-      {...props}
-    />
-  ),
-  ul: ({ className, ...props }: { className?: string }) => (
-    <ul className={cn("my-1 list-disc pl-4", className)} {...props} />
-  ),
-};
-
 type ParsedHelpDoc = { body: string; description: string; title: string };
 
 // Minimal frontmatter parser for our controlled help docs: a leading `---` block of `key: value`
@@ -144,16 +95,6 @@ function rectToOwnerRect(rect: DOMRect): WidgetOwnerRect {
     top: rect.top,
     width: rect.width,
   };
-}
-
-function HintMarkdown({ content }: { content: string }) {
-  return (
-    <div className="text-sm leading-relaxed break-words">
-      <Markdown components={MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]}>
-        {content}
-      </Markdown>
-    </div>
-  );
 }
 
 export function HelpHint({
@@ -241,7 +182,7 @@ export function HelpHint({
           ) : null}
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto pr-1">
-          <HintMarkdown content={body} />
+          <MarkdownContent content={body} />
         </div>
       </DialogContent>
     </Dialog>

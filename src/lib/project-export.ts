@@ -19,9 +19,34 @@ export type ProjectBundleManifest = SkyboxManifestV2 & {
   assets: Record<string, { mimeType: string; sourceAssetId: string | null }>;
 };
 
+// Asset compression formats for the exported image layers. PNG is lossless (quality ignored); JPEG
+// and WebP are lossy and honor `quality` (0..1). JPEG has no alpha channel — transparent decals
+// composite onto black — so the UI warns before choosing it.
+export type BundleAssetFormat = "png" | "jpeg" | "webp";
+
+export type BuildProjectBundleOptions = {
+  format?: BundleAssetFormat;
+  onProgress?: (completed: number, total: number) => void;
+  quality?: number;
+  visibleOnly?: boolean;
+};
+
+const FORMAT_TO_MIME: Record<BundleAssetFormat, string> = {
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+const FORMAT_TO_EXT: Record<BundleAssetFormat, string> = {
+  jpeg: "jpg",
+  png: "png",
+  webp: "webp",
+};
+const DEFAULT_BUNDLE_FORMAT: BundleAssetFormat = "png";
+
 type ImageAssetEntry = {
   bytes: Uint8Array;
   hash: string;
+  mimeType: string;
   path: string;
   sourceAssetId: string | null;
 };
@@ -48,7 +73,31 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
     .join("");
 }
 
-async function blobToPngBytes(blob: Blob): Promise<Uint8Array> {
+function canvasToBytes(
+  canvas: HTMLCanvasElement,
+  mimeType: string,
+  quality?: number
+): Promise<Uint8Array> {
+  return new Promise<Uint8Array>((resolve, reject) => {
+    canvas.toBlob(
+      (result) => {
+        if (!result) {
+          reject(new Error("Image asset encode failed."));
+          return;
+        }
+
+        result
+          .arrayBuffer()
+          .then((buffer) => resolve(new Uint8Array(buffer)))
+          .catch(reject);
+      },
+      mimeType,
+      quality
+    );
+  });
+}
+
+async function blobToCanvas(blob: Blob): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(blob);
   const canvas = document.createElement("canvas");
 
@@ -65,21 +114,10 @@ async function blobToPngBytes(blob: Blob): Promise<Uint8Array> {
   context.drawImage(bitmap, 0, 0);
   bitmap.close();
 
-  const pngBlob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => {
-      if (result) {
-        resolve(result);
-        return;
-      }
-
-      reject(new Error("Image asset PNG encode failed."));
-    }, "image/png");
-  });
-
-  return new Uint8Array(await pngBlob.arrayBuffer());
+  return canvas;
 }
 
-function pixelsToPngBytes(params: ImageState): Promise<Uint8Array> {
+function pixelsToCanvas(params: ImageState): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
 
   canvas.width = params.width;
@@ -88,69 +126,71 @@ function pixelsToPngBytes(params: ImageState): Promise<Uint8Array> {
   const context = canvas.getContext("2d");
 
   if (!context || !params.pixels) {
-    return Promise.reject(new Error("Image asset pixels could not be encoded."));
+    throw new Error("Image asset pixels could not be encoded.");
   }
 
   context.putImageData(
-    new ImageData(
-      new Uint8ClampedArray(params.pixels),
-      params.width,
-      params.height
-    ),
+    new ImageData(new Uint8ClampedArray(params.pixels), params.width, params.height),
     0,
     0
   );
 
-  return new Promise<Uint8Array>((resolve, reject) => {
-    canvas.toBlob((result) => {
-      if (!result) {
-        reject(new Error("Image asset PNG encode failed."));
-        return;
-      }
-
-      result
-        .arrayBuffer()
-        .then((buffer) => resolve(new Uint8Array(buffer)))
-        .catch(reject);
-    }, "image/png");
-  });
+  return canvas;
 }
 
-async function readImageLayerPngBytes(params: ImageState): Promise<Uint8Array | null> {
+// Encode an image layer to the requested format/quality. PNG ignores `quality`; canvas.toBlob
+// drops alpha for JPEG. Source priority mirrors the layer's own fallback: stored blob → src → pixels.
+async function encodeImageLayerBytes(
+  params: ImageState,
+  format: BundleAssetFormat,
+  quality?: number
+): Promise<Uint8Array | null> {
+  let canvas: HTMLCanvasElement | null = null;
+
   if (params.assetId) {
     const blob = await getImageAsset(params.assetId);
 
     if (blob) {
-      return blobToPngBytes(blob);
+      canvas = await blobToCanvas(blob);
     }
   }
 
-  if (params.src) {
+  if (!canvas && params.src) {
     const response = await fetch(params.src);
 
-    return blobToPngBytes(await response.blob());
+    canvas = await blobToCanvas(await response.blob());
   }
 
-  if (params.pixels && params.width > 0 && params.height > 0) {
-    return pixelsToPngBytes(params);
+  if (!canvas && params.pixels && params.width > 0 && params.height > 0) {
+    canvas = pixelsToCanvas(params);
   }
 
-  return null;
+  if (!canvas) {
+    return null;
+  }
+
+  return canvasToBytes(canvas, FORMAT_TO_MIME[format], quality);
 }
 
 async function collectImageAssets(
-  effectLayers: EffectLayer[]
+  effectLayers: EffectLayer[],
+  format: BundleAssetFormat,
+  quality: number | undefined,
+  onProgress?: (completed: number, total: number) => void
 ): Promise<Map<string, ImageAssetEntry>> {
   const byLayerId = new Map<string, ImageAssetEntry>();
   const byHash = new Map<string, ImageAssetEntry>();
+  const imageLayers = effectLayers.filter((layer) => layer.type === "image");
+  const extension = FORMAT_TO_EXT[format];
+  const mimeType = FORMAT_TO_MIME[format];
+  let completed = 0;
 
-  for (const layer of effectLayers) {
-    if (layer.type !== "image") {
-      continue;
-    }
-
+  for (const layer of imageLayers) {
     const params = layer.params as ImageState;
-    const bytes = await readImageLayerPngBytes(params);
+    const bytes = await encodeImageLayerBytes(params, format, quality);
+
+    completed += 1;
+    onProgress?.(completed, imageLayers.length);
 
     if (!bytes) {
       continue;
@@ -163,7 +203,8 @@ async function collectImageAssets(
       {
         bytes,
         hash,
-        path: `assets/${hash}.png`,
+        mimeType,
+        path: `assets/${hash}.${extension}`,
         sourceAssetId: params.assetId,
       };
 
@@ -209,10 +250,20 @@ function rewriteNodes(
 
 export async function buildProjectBundle(
   effectLayers: EffectLayer[],
-  skyGeometryType: SkyGeometryType
+  skyGeometryType: SkyGeometryType,
+  options: BuildProjectBundleOptions = {}
 ): Promise<{ blob: Blob; fileName: string }> {
-  const assetsByLayerId = await collectImageAssets(effectLayers);
-  const baseManifest = createSkyboxManifest(effectLayers, null, { type: skyGeometryType });
+  const format = options.format ?? DEFAULT_BUNDLE_FORMAT;
+  const layers = options.visibleOnly
+    ? effectLayers.filter((layer) => layer.enabled)
+    : effectLayers;
+  const assetsByLayerId = await collectImageAssets(
+    layers,
+    format,
+    options.quality,
+    options.onProgress
+  );
+  const baseManifest = createSkyboxManifest(layers, null, { type: skyGeometryType });
 
   const uniqueAssets = new Map<string, ImageAssetEntry>();
 
@@ -221,7 +272,7 @@ export async function buildProjectBundle(
   const assetsIndex: ProjectBundleManifest["assets"] = {};
 
   uniqueAssets.forEach((entry) => {
-    assetsIndex[entry.path] = { mimeType: "image/png", sourceAssetId: entry.sourceAssetId };
+    assetsIndex[entry.path] = { mimeType: entry.mimeType, sourceAssetId: entry.sourceAssetId };
   });
 
   const manifest: ProjectBundleManifest = {
@@ -237,6 +288,8 @@ export async function buildProjectBundle(
   uniqueAssets.forEach((entry) => {
     files[entry.path] = entry.bytes;
   });
+
+  options.onProgress?.(1, 1);
 
   const zipped = zipSync(files);
 

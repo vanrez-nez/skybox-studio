@@ -38,6 +38,7 @@ import {
   type SkyboxGpuBakeService,
   type SkyboxManifest,
   type SkyboxManifestNode,
+  type SkyboxStarfieldQuality,
   type StarfieldGpuBakeService,
 } from "@/runtime/index";
 import { useWorkspaceStore } from "@/store/app";
@@ -47,6 +48,9 @@ const MAX_EXPORT_WIDTH = 8192;
 const MIN_EXPORT_HEIGHT = 128;
 const MAX_EXPORT_HEIGHT = 4096;
 const DIMENSIONS_LOCK_PAIR: LockPair = ["x", "y"];
+// Image export flattens the starfield to a static texture, so the quality setting (a runtime memory
+// budget) no longer applies — always bake at the highest quality for the sharpest result.
+const IMAGE_EXPORT_STARFIELD_QUALITY: SkyboxStarfieldQuality = "high";
 
 type ExportPreset = {
   height: number;
@@ -272,6 +276,10 @@ export function BakePreview() {
   // Bake every enabled starfield layer to a full-equirect texture at export width. The composition
   // bake samples these as plain textures (`getStarfieldTexture`), so we hand back the service's
   // cached textures directly — they must NOT be disposed here (the service owns them).
+  //
+  // Image export always bakes starfields at the highest quality regardless of the layer's selected
+  // quality: that setting only governs the procedural runtime's memory budget, which is irrelevant
+  // once the field is flattened to a static texture here.
   const bakeStarfieldTextures = (
     starfieldService: StarfieldGpuBakeService,
     bakeManifest: SkyboxManifest,
@@ -281,8 +289,9 @@ export function BakePreview() {
     const textures = new Map<string, THREE.Texture>();
 
     starfieldLayers.forEach((layer) => {
-      const key = starfieldService.createBakeKey(layer.params, width);
-      const texture = starfieldService.bakeTexture(layer.params, key, width);
+      const params = { ...layer.params, quality: IMAGE_EXPORT_STARFIELD_QUALITY };
+      const key = starfieldService.createBakeKey(params, width);
+      const texture = starfieldService.bakeTexture(params, key, width);
 
       textures.set(layer.id, texture);
     });

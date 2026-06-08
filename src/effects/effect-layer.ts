@@ -422,6 +422,22 @@ export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
   createDefaultParams: (context) => createDefaultSpotState(context?.centerDirection),
   defaultBlendMode: "normal",
   displayName: "Spot",
+  getFocusTarget: (layer) => {
+    if (!layer.enabled) {
+      return null;
+    }
+
+    const direction = layer.params.centerDirection;
+
+    if (!isFiniteDirection(direction)) {
+      return null;
+    }
+
+    return {
+      direction,
+      type: "direction",
+    };
+  },
   getDefaultName: () => "Spot",
   load: (serialized) => cloneSpotState(serialized.params),
   serialize: (params) => ({ params: cloneSpotState(params), type: "spot" }),

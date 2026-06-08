@@ -448,9 +448,9 @@ export function FieldGradientGroup({
         })}
       </div>
 
-      <div className="widget-inline-fields">
-        <div className="widget-field widget-field-color">
-          <span className="text-xs">Color</span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs">Color</span>
+        <div className="flex items-center gap-2">
           <FloatingColorPicker
             onChange={(color) =>
               onUpdateAnchor(selectedAnchor.id, { color }, { history: "skip" })
@@ -459,17 +459,17 @@ export function FieldGradientGroup({
             onChangeStart={onInteractionStart}
             value={selectedAnchor.color}
           />
+          <Button
+            aria-label="Remove selected field anchor"
+            disabled={!canRemoveAnchor}
+            onClick={() => onRemoveAnchor(selectedAnchor.id)}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            <Trash2 />
+          </Button>
         </div>
-        <Button
-          aria-label="Remove selected field anchor"
-          disabled={!canRemoveAnchor}
-          onClick={() => onRemoveAnchor(selectedAnchor.id)}
-          size="icon-sm"
-          type="button"
-          variant="ghost"
-        >
-          <Trash2 />
-        </Button>
       </div>
 
       <div className="widget-inline-fields">

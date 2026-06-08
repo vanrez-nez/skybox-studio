@@ -9,6 +9,12 @@ import {
   SelectValue,
 } from "@/components/ui/primitives/select";
 import { Slider } from "@/components/ui/primitives/slider";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/primitives/tabs";
 import type { SkyboxStarfieldClipParams } from "@/runtime/manifest";
 import * as starfieldOps from "@/effects/layers/starfield/operations";
 import {
@@ -368,103 +374,116 @@ export function StarfieldWidget() {
         </div>
       </div>
 
-      <FieldGroup label="Clip" contentClassName="grid gap-3">
-        <div className="widget-field widget-field-mode">
-          <span className="text-xs">Preset</span>
-          <Select
-            onValueChange={(value) => {
-              if (value === "custom") {
-                return;
-              }
+      <Tabs defaultValue="stars">
+        <TabsList className="w-full">
+          <TabsTrigger className="flex-1" value="stars">
+            Stars
+          </TabsTrigger>
+          <TabsTrigger className="flex-1" value="nebula">
+            Nebula
+          </TabsTrigger>
+          <TabsTrigger className="flex-1" value="clipping">
+            Clipping
+          </TabsTrigger>
+        </TabsList>
 
-              const preset = CLIP_PRESETS.find((entry) => entry.id === value);
-
-              if (preset) {
-                setClip(preset.clip);
-              }
-            }}
-            value={getMatchingClipPresetId(starfield.clip)}
-          >
-            <SelectTrigger
-              aria-label="Starfield clip preset"
-              className="w-full bg-background text-xs"
-              size="xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CLIP_PRESETS.map((preset) => (
-                <SelectItem className="text-xs" key={preset.id} value={preset.id}>
-                  {preset.label}
-                </SelectItem>
-              ))}
-              <SelectItem className="text-xs" value="custom">
-                Custom
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {CLIP_CONTROLS.map((control) => (
-          <StarfieldSlider
-            key={control.parameter}
-            {...control}
-            onChange={setClipParameter}
-            value={starfield.clip[control.parameter]}
-          />
-        ))}
-      </FieldGroup>
-
-      <FieldGroup label="Stars" contentClassName="grid gap-3">
-        {STAR_CONTROLS.map((control) => (
-          <StarfieldSlider
-            key={control.parameter}
-            {...control}
-            onChange={setStarsParameter}
-            value={starfield.stars[control.parameter]}
-          />
-        ))}
-      </FieldGroup>
-
-      <FieldGroup label="Nebula" contentClassName="grid gap-3">
-        <div className="grid gap-2">
-          {NEBULA_COLORS.map((color) => (
-            <ColorField
-              key={color.parameter}
-              label={color.label}
-              onChange={(nextColor, options) =>
-                setNebulaColor(color.parameter, nextColor, options)
-              }
-              value={starfield.nebula[color.parameter]}
+        <TabsContent className="grid gap-3" value="stars">
+          {STAR_CONTROLS.map((control) => (
+            <StarfieldSlider
+              key={control.parameter}
+              {...control}
+              onChange={setStarsParameter}
+              value={starfield.stars[control.parameter]}
             />
           ))}
-        </div>
-        {NEBULA_CONTROLS.map((control) => (
-          <StarfieldSlider
-            key={control.parameter}
-            {...control}
-            onChange={setNebulaParameter}
-            value={starfield.nebula[control.parameter]}
-          />
-        ))}
-      </FieldGroup>
+        </TabsContent>
 
-      <FieldGroup label="Nebula Field" contentClassName="grid gap-3">
-        <FieldGradientGroup
-          onAddAnchor={addAnchor}
-          onInteractionEnd={commitHistoryTransaction}
-          onInteractionStart={beginHistoryTransaction}
-          onRandomize={randomizeField}
-          onRemoveAnchor={removeAnchor}
-          onReset={resetField}
-          onSelectAnchor={selectAnchor}
-          onSetAmplitude={setFieldAmplitude}
-          onSetFrequency={setFieldFrequency}
-          onSetMode={setFieldMode}
-          onSetPower={setFieldPower}
-          onUpdateAnchor={updateAnchor}
-          value={starfield.nebulaField}
-        />
-      </FieldGroup>
+        <TabsContent className="grid gap-3" value="nebula">
+          <div className="grid gap-2">
+            {NEBULA_COLORS.map((color) => (
+              <ColorField
+                key={color.parameter}
+                label={color.label}
+                onChange={(nextColor, options) =>
+                  setNebulaColor(color.parameter, nextColor, options)
+                }
+                value={starfield.nebula[color.parameter]}
+              />
+            ))}
+          </div>
+          {NEBULA_CONTROLS.map((control) => (
+            <StarfieldSlider
+              key={control.parameter}
+              {...control}
+              onChange={setNebulaParameter}
+              value={starfield.nebula[control.parameter]}
+            />
+          ))}
+          <FieldGroup label="Nebula Field" contentClassName="grid gap-3">
+            <FieldGradientGroup
+              onAddAnchor={addAnchor}
+              onInteractionEnd={commitHistoryTransaction}
+              onInteractionStart={beginHistoryTransaction}
+              onRandomize={randomizeField}
+              onRemoveAnchor={removeAnchor}
+              onReset={resetField}
+              onSelectAnchor={selectAnchor}
+              onSetAmplitude={setFieldAmplitude}
+              onSetFrequency={setFieldFrequency}
+              onSetMode={setFieldMode}
+              onSetPower={setFieldPower}
+              onUpdateAnchor={updateAnchor}
+              value={starfield.nebulaField}
+            />
+          </FieldGroup>
+        </TabsContent>
+
+        <TabsContent className="grid gap-3" value="clipping">
+          <div className="widget-field widget-field-mode">
+            <span className="text-xs">Preset</span>
+            <Select
+              onValueChange={(value) => {
+                if (value === "custom") {
+                  return;
+                }
+
+                const preset = CLIP_PRESETS.find((entry) => entry.id === value);
+
+                if (preset) {
+                  setClip(preset.clip);
+                }
+              }}
+              value={getMatchingClipPresetId(starfield.clip)}
+            >
+              <SelectTrigger
+                aria-label="Starfield clip preset"
+                className="w-full bg-background text-xs"
+                size="xs"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLIP_PRESETS.map((preset) => (
+                  <SelectItem className="text-xs" key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+                <SelectItem className="text-xs" value="custom">
+                  Custom
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {CLIP_CONTROLS.map((control) => (
+            <StarfieldSlider
+              key={control.parameter}
+              {...control}
+              onChange={setClipParameter}
+              value={starfield.clip[control.parameter]}
+            />
+          ))}
+        </TabsContent>
+      </Tabs>
     </Widget>
   );
 }

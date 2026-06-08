@@ -3,6 +3,7 @@ import * as THREE from "three/webgpu";
 
 import { useWorkspaceStore } from "@/store/app";
 import { getImageAsset } from "@/lib/image-assets";
+import { configureSkyboxImageTexture } from "@/lib/skybox-image-textures";
 import type {
   CameraRotationMode,
   WorkspaceView,
@@ -411,17 +412,6 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
     syncEditorLayerStateRef.current(effectLayersRef.current, selectedLayerId);
 
-    const configureImageTexture = (texture: THREE.Texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.wrapS = THREE.ClampToEdgeWrapping;
-      texture.wrapT = THREE.ClampToEdgeWrapping;
-      texture.flipY = false;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = true;
-      texture.needsUpdate = true;
-    };
-
     const pushImageTexturesToSkybox = () => {
       liveSkybox.setImageTextures(
         Object.fromEntries(
@@ -507,7 +497,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         const texture = new THREE.Texture(imageElement);
         const src = imageParams.src;
 
-        configureImageTexture(texture);
+        configureSkyboxImageTexture(texture);
         imageTextureRecords.set(layer.id, {
           bindingsRefreshed: false,
           ready: false,

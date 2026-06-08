@@ -2,9 +2,9 @@
 // render it with the runtime package in isolation. Live = original layers via the
 // Skybox material; Baked = the whole manifest flattened to one equirect texture.
 import * as THREE from "three/webgpu";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Skybox, createBakedSkyboxTexture } from "skybox-studio-runtime";
 
-import { createLookControls } from "./look-controls";
 import {
   collectImageLayers,
   loadBundleFromDirectory,
@@ -32,7 +32,31 @@ app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 100);
-const controls = createLookControls(camera, renderer.domElement);
+camera.position.set(0, 0, 1);
+
+// Standard three.js OrbitControls, set up for looking around from inside the skybox.
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.enablePan = false;
+controls.enableZoom = false; // scroll rotates instead of zooming (see wheel handler below)
+controls.rotateSpeed = -0.4; // invert so dragging feels like grabbing the sky from inside
+controls.minPolarAngle = 0.01; // keep just shy of the poles to avoid flipping over the top
+controls.maxPolarAngle = Math.PI - 0.01;
+
+// Scroll rotates both axes: horizontal delta → azimuth, vertical delta → polar.
+// rotateLeft/rotateUp are OrbitControls' public programmatic-rotation API (each calls update()).
+renderer.domElement.addEventListener(
+  "wheel",
+  (event) => {
+    event.preventDefault();
+
+    const rotateSpeed = 0.0025;
+
+    controls.rotateLeft(event.deltaX * rotateSpeed);
+    controls.rotateUp(event.deltaY * rotateSpeed);
+  },
+  { passive: false }
+);
 
 let bundle: Bundle | null = null;
 let skybox: Skybox | null = null;

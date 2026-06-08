@@ -17,6 +17,7 @@ export type TextureBakeStarfieldBake = {
 };
 
 export type TextureBakeWorkerRequest = {
+  height?: number;
   id: number;
   manifest: SkyboxManifest;
   starfieldBakes?: TextureBakeStarfieldBake[];
@@ -106,6 +107,7 @@ workerSelf.onmessage = (event: MessageEvent<TextureBakeWorkerRequest>) => {
       const manifest = await resolveManifestImages(event.data.manifest);
       const bakedImage = bakeSkyboxImageData(manifest, {
         cache: false,
+        height: event.data.height,
         starfieldBakes: event.data.starfieldBakes
           ? new Map<string, StarfieldBakeData>(
               event.data.starfieldBakes.map((bake) => [

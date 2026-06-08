@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ImagePlus, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { ImagePlus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/primitives/button";
 import {
@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/primitives/dialog";
+import { ImagePreview } from "@/components/ui/composables/image-preview";
 import {
   Point2Input,
   type LockConfig,
@@ -47,8 +48,6 @@ import {
 import { useWorkspaceStore } from "@/store/app";
 import { useSelectedLayerParams } from "@/store/use-selected-layer";
 
-const DIALOG_PREVIEW_HEIGHT = 400;
-const DIALOG_PREVIEW_WIDTH = 600;
 const TRANSPARENT_PLACEHOLDER_ACTION_CLASS =
   "bg-secondary text-secondary-foreground shadow-sm hover:bg-card!";
 const SCALE_LOCKS: LockConfig[] = [
@@ -113,12 +112,6 @@ function hasImageDragData(dataTransfer: DataTransfer) {
   return Array.from(dataTransfer.items).some((item) => item.kind === "file" && item.type.startsWith("image/"));
 }
 
-function clampPanOffset(value: number, imageSize: number, viewportSize: number) {
-  const maxOffset = Math.max(0, (imageSize - viewportSize) / 2);
-
-  return Math.min(maxOffset, Math.max(-maxOffset, value));
-}
-
 function mergeChangedPointValue(
   currentValue: Point2Value,
   nextValue: Point2Value,
@@ -175,19 +168,9 @@ function formatScaleValue(value: number) {
 
 export function ImageWidget() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const panDragRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    x: number;
-    y: number;
-  } | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
-  const [isPanning, setIsPanning] = useState(false);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scaleLockedPairs, setScaleLockedPairs] = useState<LockPair[]>([SCALE_LOCK_PAIR]);
-  const [zoom, setZoom] = useState(1);
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
@@ -317,17 +300,6 @@ export function ImageWidget() {
   const imageInfo = hasImage
     ? `${image.fileName || "Image"} · ${image.width} x ${image.height} · ${formatBytes(image.byteSize)}`
     : "";
-  const fitScale =
-    image.width > 0 && image.height > 0
-      ? Math.min(DIALOG_PREVIEW_WIDTH / image.width, DIALOG_PREVIEW_HEIGHT / image.height)
-      : 1;
-  const previewImageWidth = image.width * fitScale * zoom;
-  const previewImageHeight = image.height * fitScale * zoom;
-
-  const clampPan = (nextPan: { x: number; y: number }) => ({
-    x: clampPanOffset(nextPan.x, previewImageWidth, DIALOG_PREVIEW_WIDTH),
-    y: clampPanOffset(nextPan.y, previewImageHeight, DIALOG_PREVIEW_HEIGHT),
-  });
   const canEditPlacement = Boolean(hasImage && image.placement && selectedLayerId);
 
   const getLatestImagePlacement = () => {
@@ -411,10 +383,6 @@ export function ImageWidget() {
     );
   };
 
-  useEffect(() => {
-    setPan((currentPan) => clampPan(currentPan));
-  }, [previewImageHeight, previewImageWidth]);
-
   return (
     <Widget
       title="Image"
@@ -446,11 +414,7 @@ export function ImageWidget() {
             <button
               aria-label="Preview image"
               className="absolute inset-0 cursor-zoom-in"
-              onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-                setIsDialogOpen(true);
-              }}
+              onClick={() => setIsDialogOpen(true)}
               type="button"
             >
               <img
@@ -555,101 +519,13 @@ export function ImageWidget() {
           <p className="absolute top-4 left-4 max-w-[calc(100%-4rem)] truncate text-xs text-muted-foreground">
             {imageInfo}
           </p>
-          <div
-            className={cn(
-              "transparent-checker relative flex max-h-[70vh] min-h-64 touch-none items-center justify-center overflow-hidden rounded-md border",
-              isPanning ? "cursor-grabbing" : "cursor-grab"
-            )}
-            onPointerCancel={() => {
-              panDragRef.current = null;
-              setIsPanning(false);
-            }}
-            onPointerDown={(event) => {
-              if (!image.src) {
-                return;
-              }
-
-              event.currentTarget.setPointerCapture(event.pointerId);
-              panDragRef.current = {
-                pointerId: event.pointerId,
-                startX: event.clientX,
-                startY: event.clientY,
-                x: pan.x,
-                y: pan.y,
-              };
-              setIsPanning(true);
-            }}
-            onPointerMove={(event) => {
-              const drag = panDragRef.current;
-
-              if (!drag || drag.pointerId !== event.pointerId) {
-                return;
-              }
-
-              setPan(
-                clampPan({
-                  x: drag.x + event.clientX - drag.startX,
-                  y: drag.y + event.clientY - drag.startY,
-                })
-              );
-            }}
-            onPointerUp={(event) => {
-              if (panDragRef.current?.pointerId === event.pointerId) {
-                panDragRef.current = null;
-                setIsPanning(false);
-              }
-            }}
-            style={{
-              height: DIALOG_PREVIEW_HEIGHT,
-              width: DIALOG_PREVIEW_WIDTH,
-            }}
-          >
-            <div
-              className="absolute top-2 right-2 z-10 flex items-center gap-2"
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              <Button
-                aria-label="Zoom out"
-                className={TRANSPARENT_PLACEHOLDER_ACTION_CLASS}
-                disabled={zoom <= 0.5}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setZoom((currentZoom) => Math.max(0.5, currentZoom - 0.25));
-                }}
-                size="icon-sm"
-                type="button"
-                variant="secondary"
-              >
-                <ZoomOut />
-              </Button>
-              <Button
-                aria-label="Zoom in"
-                className={TRANSPARENT_PLACEHOLDER_ACTION_CLASS}
-                disabled={zoom >= 4}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setZoom((currentZoom) => Math.min(4, currentZoom + 0.25));
-                }}
-                size="icon-sm"
-                type="button"
-                variant="secondary"
-              >
-                <ZoomIn />
-              </Button>
-            </div>
-            {image.src ? (
-              <img
-                alt={image.fileName || "Image layer"}
-                className="pointer-events-none max-h-none max-w-none object-contain select-none"
-                src={image.src}
-                style={{
-                  height: `${previewImageHeight}px`,
-                  transform: `translate(${pan.x}px, ${pan.y}px)`,
-                  width: `${previewImageWidth}px`,
-                }}
-              />
-            ) : null}
-          </div>
+          <ImagePreview
+            alt={image.fileName || "Image layer"}
+            className="h-[400px] max-h-[70vh] min-h-64 w-[600px]"
+            naturalHeight={image.height}
+            naturalWidth={image.width}
+            src={image.src ?? null}
+          />
         </DialogContent>
       </Dialog>
     </Widget>

@@ -1,34 +1,94 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
 import * as THREE from "three/webgpu";
 
 import { Button } from "@/components/ui/primitives/button";
-import { Input } from "@/components/ui/primitives/input";
-import { createSkyboxManifest } from "@/effects/skybox-manifest";
-import type {
-  TextureBakeStarfieldBake,
-  TextureBakeWorkerResponse,
-} from "@/processes/texture-baking.worker";
+import { FieldGroup } from "@/components/ui/primitives/field-group";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/primitives/select";
+import { Slider } from "@/components/ui/primitives/slider";
+import { ImagePreview } from "@/components/ui/composables/image-preview";
+import {
+  Point2Input,
+  type LockPair,
+  type Point2Value,
+  type PointInputChangeOptions,
+} from "@/components/ui/composables/point-input";
+import { createSkyboxManifest } from "@/effects/skybox-manifest";
+import {
+  disposeSkyboxImageTextures,
+  loadSkyboxImageTextures,
+} from "@/lib/skybox-image-textures";
+import {
+  DEFAULT_EXPORTER_ID,
+  getSkyboxExporter,
+  listSkyboxExporters,
+} from "@/lib/skybox-exporters";
+import type { TextureBakeWorkerResponse } from "@/processes/texture-baking.worker";
+import {
+  createSkyboxGpuBakeService,
   createStarfieldGpuBakeService,
   migrateManifestToV2,
+  type BakedSkyboxImageData,
+  type SkyboxGpuBakeService,
   type SkyboxManifest,
   type SkyboxManifestNode,
+  type StarfieldGpuBakeService,
 } from "@/runtime/index";
 import { useWorkspaceStore } from "@/store/app";
 
-const DEFAULT_EXPORT_WIDTH = 2048;
 const MIN_EXPORT_WIDTH = 256;
 const MAX_EXPORT_WIDTH = 8192;
+const MIN_EXPORT_HEIGHT = 128;
+const MAX_EXPORT_HEIGHT = 4096;
+const DIMENSIONS_LOCK_PAIR: LockPair = ["x", "y"];
+
+type ExportPreset = {
+  height: number;
+  label: string;
+  value: string;
+  width: number;
+};
+
+const EXPORT_PRESETS: ExportPreset[] = [
+  { height: 960, label: "1080p · 1920×960", value: "1080p", width: 1920 },
+  { height: 1024, label: "2K · 2048×1024", value: "2K", width: 2048 },
+  { height: 2048, label: "4K · 4096×2048", value: "4K", width: 4096 },
+  { height: 4096, label: "8K · 8192×4096", value: "8K", width: 8192 },
+];
+const DEFAULT_PRESET = EXPORT_PRESETS[1];
+const CUSTOM_PRESET_VALUE = "custom";
 
 type BakeStatus = "idle" | "loading" | "ready" | "error";
 
-function clampExportWidth(value: number) {
+function clampWidth(value: number) {
   if (!Number.isFinite(value)) {
-    return DEFAULT_EXPORT_WIDTH;
+    return DEFAULT_PRESET.width;
   }
 
   return Math.min(MAX_EXPORT_WIDTH, Math.max(MIN_EXPORT_WIDTH, Math.round(value)));
+}
+
+function clampHeight(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_PRESET.height;
+  }
+
+  return Math.min(MAX_EXPORT_HEIGHT, Math.max(MIN_EXPORT_HEIGHT, Math.round(value)));
+}
+
+function matchPresetValue(width: number, height: number) {
+  const preset = EXPORT_PRESETS.find((entry) => entry.width === width && entry.height === height);
+
+  return preset?.value ?? CUSTOM_PRESET_VALUE;
+}
+
+function isDimensionsLocked(lockedPairs: LockPair[]) {
+  return lockedPairs.some((pair) => pair[0] === "x" && pair[1] === "y");
 }
 
 function formatExportTimestamp(date = new Date()) {
@@ -45,37 +105,29 @@ function formatExportTimestamp(date = new Date()) {
   ].join("");
 }
 
-function encodeImageDataAsPng(data: ArrayBuffer, width: number, height: number) {
-  return new Promise<Blob>((resolve, reject) => {
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-    const sourceData = new Uint8ClampedArray(data);
-    const flippedData = new Uint8ClampedArray(sourceData.length);
+// The CPU worker bake produces bottom-up rows (legacy convention); flip to top-down so the stored
+// bytes match the GPU readback and the canvas exporters (which never flip).
+function flipRowsTopDown(data: Uint8ClampedArray, width: number, height: number) {
+  const flipped = new Uint8ClampedArray(data.length);
 
-    if (!context) {
-      reject(new Error("Export preview could not be created."));
-      return;
-    }
+  for (let y = 0; y < height; y += 1) {
+    const sourceOffset = y * width * 4;
+    const targetOffset = (height - y - 1) * width * 4;
 
-    for (let y = 0; y < height; y += 1) {
-      const sourceOffset = y * width * 4;
-      const targetOffset = (height - y - 1) * width * 4;
+    flipped.set(data.subarray(sourceOffset, sourceOffset + width * 4), targetOffset);
+  }
 
-      flippedData.set(sourceData.subarray(sourceOffset, sourceOffset + width * 4), targetOffset);
-    }
+  return flipped;
+}
 
-    canvas.width = width;
-    canvas.height = height;
-    context.putImageData(new ImageData(flippedData, width, height), 0, 0);
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-        return;
-      }
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
 
-      reject(new Error("PNG export could not be created."));
-    }, "image/png");
-  });
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function collectStarfieldLayers(
@@ -100,78 +152,154 @@ function collectStarfieldLayers(
   return layers;
 }
 
-async function createGpuStarfieldExportBakes(
-  manifest: SkyboxManifest,
-  width: number
-): Promise<TextureBakeStarfieldBake[] | undefined> {
-  const starfieldLayers = collectStarfieldLayers(migrateManifestToV2(manifest).nodes);
+type GpuBakeContext = {
+  renderer: THREE.WebGPURenderer;
+  skyboxService: SkyboxGpuBakeService;
+  starfieldService: StarfieldGpuBakeService;
+};
 
-  if (starfieldLayers.length === 0) {
-    return undefined;
-  }
+type LdrBake = { data: Uint8ClampedArray; height: number; width: number };
 
-  const canvas = document.createElement("canvas");
-  const renderer = new THREE.WebGPURenderer({
-    alpha: true,
-    antialias: false,
-    canvas,
-  });
-
-  canvas.width = width;
-  canvas.height = Math.floor(width / 2);
-  await renderer.init();
-
-  const bakeService = createStarfieldGpuBakeService(renderer);
-
-  if (!bakeService) {
-    renderer.dispose();
-    throw new Error("GPU Starfield export bake is not available.");
-  }
-
-  try {
-    const bakes = await Promise.all(
-      starfieldLayers.map(async (layer) => {
-        const key = bakeService.createBakeKey(layer.params, width);
-        const bake = await bakeService.bakeImageData(layer.params, key, width);
-
-        return {
-          data: bake.data.buffer,
-          height: bake.height,
-          layerId: layer.id,
-          width: bake.width,
-        };
-      })
-    );
-
-    return bakes;
-  } finally {
-    bakeService.dispose();
-    renderer.dispose();
-  }
-}
+const EXPORTERS = listSkyboxExporters();
 
 export function BakePreview() {
   const [error, setError] = useState("");
-  const [pngBlob, setPngBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<BakeStatus>("idle");
-  const [widthInput, setWidthInput] = useState(String(DEFAULT_EXPORT_WIDTH));
+  const [dimensions, setDimensions] = useState({
+    height: DEFAULT_PRESET.height,
+    width: DEFAULT_PRESET.width,
+  });
+  const [lockedPairs, setLockedPairs] = useState<LockPair[]>([DIMENSIONS_LOCK_PAIR]);
+  const [preset, setPreset] = useState(DEFAULT_PRESET.value);
+  const [format, setFormat] = useState(DEFAULT_EXPORTER_ID);
+  const [quality, setQuality] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
+  const [gpuReady, setGpuReady] = useState(true);
   const requestIdRef = useRef(0);
   const workerRef = useRef<Worker | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const gpuRef = useRef<GpuBakeContext | null>(null);
+  const bakedRef = useRef<LdrBake | null>(null);
   const effectLayers = useWorkspaceStore((state) => state.effectLayers);
   const skyGeometryType = useWorkspaceStore((state) => state.skyGeometryType);
-  const exportWidth = clampExportWidth(Number.parseInt(widthInput, 10));
-  const exportHeight = Math.floor(exportWidth / 2);
+  const exportWidth = clampWidth(dimensions.width);
+  const exportHeight = clampHeight(dimensions.height);
   const manifest = useMemo(
     () => createSkyboxManifest(effectLayers, null, { type: skyGeometryType }),
     [effectLayers, skyGeometryType]
   );
+  const currentExporter = getSkyboxExporter(format);
 
   const clearPreviewUrl = () => {
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = null;
+    }
+  };
+
+  const applyPreviewBlob = (blob: Blob) => {
+    clearPreviewUrl();
+    const nextPreviewUrl = URL.createObjectURL(blob);
+
+    previewUrlRef.current = nextPreviewUrl;
+    setError("");
+    setPreviewUrl(nextPreviewUrl);
+    setStatus("ready");
+  };
+
+  const failPreview = (message: string) => {
+    clearPreviewUrl();
+    bakedRef.current = null;
+    setPreviewUrl(null);
+    setError(message);
+    setStatus("error");
+  };
+
+  // Encode the canonical (top-down) baked bytes to an SDR PNG for on-screen preview, regardless of
+  // the selected output format (EXR can't be shown in an <img>). Reuses the PNG baker extension.
+  const encodePreview = (baked: LdrBake) => {
+    const pngExporter = getSkyboxExporter(DEFAULT_EXPORTER_ID);
+
+    if (!pngExporter) {
+      return Promise.reject(new Error("PNG exporter is not registered."));
+    }
+
+    return pngExporter.encode({
+      data: baked.data,
+      height: baked.height,
+      kind: "ldr",
+      width: baked.width,
+    });
+  };
+
+  // Lazily create a single WebGPU renderer + bake services and reuse them across every bake.
+  // The starfield service caches per (params, width), and re-init of the renderer is the dominant
+  // cost, so persisting both keeps re-bakes (preset switches) cheap.
+  const ensureGpuContext = async (): Promise<GpuBakeContext> => {
+    if (gpuRef.current) {
+      return gpuRef.current;
+    }
+
+    const canvas = document.createElement("canvas");
+    const renderer = new THREE.WebGPURenderer({ alpha: true, antialias: false, canvas });
+
+    await renderer.init();
+
+    const starfieldService = createStarfieldGpuBakeService(renderer);
+    const skyboxService = createSkyboxGpuBakeService(renderer);
+
+    if (!starfieldService || !skyboxService) {
+      renderer.dispose();
+      throw new Error("GPU skybox export bake is not available.");
+    }
+
+    gpuRef.current = { renderer, skyboxService, starfieldService };
+
+    return gpuRef.current;
+  };
+
+  // Bake every enabled starfield layer to a full-equirect texture at export width. The composition
+  // bake samples these as plain textures (`getStarfieldTexture`), so we hand back the service's
+  // cached textures directly — they must NOT be disposed here (the service owns them).
+  const bakeStarfieldTextures = (
+    starfieldService: StarfieldGpuBakeService,
+    bakeManifest: SkyboxManifest,
+    width: number
+  ) => {
+    const starfieldLayers = collectStarfieldLayers(migrateManifestToV2(bakeManifest).nodes);
+    const textures = new Map<string, THREE.Texture>();
+
+    starfieldLayers.forEach((layer) => {
+      const key = starfieldService.createBakeKey(layer.params, width);
+      const texture = starfieldService.bakeTexture(layer.params, key, width);
+
+      textures.set(layer.id, texture);
+    });
+
+    return textures;
+  };
+
+  // Single-pass GPU composition bake → top-down RGBA bytes. Throws if WebGPU is unavailable so the
+  // caller can fall back to the CPU worker.
+  const runGpuBake = async (
+    bakeManifest: SkyboxManifest,
+    width: number,
+    height: number
+  ): Promise<BakedSkyboxImageData> => {
+    const { skyboxService, starfieldService } = await ensureGpuContext();
+    const starfieldTextures = bakeStarfieldTextures(starfieldService, bakeManifest, width);
+    const imageTextures = await loadSkyboxImageTextures(bakeManifest);
+
+    try {
+      return await skyboxService.bakeImageData(bakeManifest, {
+        height,
+        imageTextures,
+        starfieldTextures,
+        width,
+      });
+    } finally {
+      disposeSkyboxImageTextures(imageTextures);
     }
   };
 
@@ -190,47 +318,35 @@ export function BakePreview() {
       }
 
       if (response.error || !response.data || !response.width || !response.height) {
-        clearPreviewUrl();
-        setPngBlob(null);
-        setPreviewUrl(null);
-        setError(response.error ?? "Skybox export failed.");
-        setStatus("error");
+        failPreview(response.error ?? "Skybox export failed.");
         return;
       }
 
-      void encodeImageDataAsPng(response.data, response.width, response.height)
+      const baked: LdrBake = {
+        data: flipRowsTopDown(new Uint8ClampedArray(response.data), response.width, response.height),
+        height: response.height,
+        width: response.width,
+      };
+
+      bakedRef.current = baked;
+      void encodePreview(baked)
         .then((blob) => {
           if (response.id !== requestIdRef.current) {
             return;
           }
 
-          clearPreviewUrl();
-          const nextPreviewUrl = URL.createObjectURL(blob);
-
-          previewUrlRef.current = nextPreviewUrl;
-          setError("");
-          setPngBlob(blob);
-          setPreviewUrl(nextPreviewUrl);
-          setStatus("ready");
+          applyPreviewBlob(blob);
         })
         .catch((nextError: unknown) => {
           if (response.id !== requestIdRef.current) {
             return;
           }
 
-          clearPreviewUrl();
-          setPngBlob(null);
-          setPreviewUrl(null);
-          setError(nextError instanceof Error ? nextError.message : "PNG export failed.");
-          setStatus("error");
+          failPreview(nextError instanceof Error ? nextError.message : "Preview encode failed.");
         });
     };
     worker.onerror = () => {
-      clearPreviewUrl();
-      setPngBlob(null);
-      setPreviewUrl(null);
-      setError("Skybox export worker failed.");
-      setStatus("error");
+      failPreview("Skybox export worker failed.");
     };
 
     return () => {
@@ -238,54 +354,61 @@ export function BakePreview() {
       worker.terminate();
       workerRef.current = null;
       clearPreviewUrl();
+
+      if (gpuRef.current) {
+        gpuRef.current.skyboxService.dispose();
+        gpuRef.current.starfieldService.dispose();
+        gpuRef.current.renderer.dispose();
+        gpuRef.current = null;
+      }
     };
   }, []);
 
   useEffect(() => {
-    const worker = workerRef.current;
-
-    if (!worker) {
-      return;
-    }
-
     const timeoutId = window.setTimeout(() => {
       const id = requestIdRef.current + 1;
 
       requestIdRef.current = id;
       clearPreviewUrl();
+      bakedRef.current = null;
       setError("");
-      setPngBlob(null);
       setPreviewUrl(null);
       setStatus("loading");
+
       void (async () => {
         try {
-          const starfieldBakes = await createGpuStarfieldExportBakes(manifest, exportWidth);
+          const baked = await runGpuBake(manifest, exportWidth, exportHeight);
 
           if (id !== requestIdRef.current) {
             return;
           }
 
-          worker.postMessage(
-            {
-              id,
-              manifest,
-              starfieldBakes,
-              width: exportWidth,
-            },
-            starfieldBakes?.map((bake) => bake.data) ?? []
-          );
-        } catch (nextError) {
+          setGpuReady(true);
+          bakedRef.current = baked;
+          const blob = await encodePreview(baked);
+
           if (id !== requestIdRef.current) {
             return;
           }
 
-          clearPreviewUrl();
-          setPngBlob(null);
-          setPreviewUrl(null);
-          setError(
-            nextError instanceof Error ? nextError.message : "GPU Starfield export bake failed."
-          );
-          setStatus("error");
+          applyPreviewBlob(blob);
+        } catch {
+          // GPU unavailable or failed — fall back to the CPU worker bake (which CPU-bakes
+          // starfield itself when no GPU bakes are supplied). EXR export needs WebGPU, so disable it.
+          if (id !== requestIdRef.current) {
+            return;
+          }
+
+          setGpuReady(false);
+
+          const worker = workerRef.current;
+
+          if (!worker) {
+            failPreview("Skybox export failed.");
+            return;
+          }
+
+          worker.postMessage({ height: exportHeight, id, manifest, width: exportWidth }, []);
         }
       })();
     }, 200);
@@ -293,54 +416,222 @@ export function BakePreview() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [exportWidth, manifest]);
+  }, [exportWidth, exportHeight, manifest]);
 
-  function handleSave() {
-    if (!pngBlob) {
+  function applyDimensions(width: number, height: number) {
+    const nextWidth = clampWidth(width);
+    const nextHeight = clampHeight(height);
+
+    setDimensions({ height: nextHeight, width: nextWidth });
+    setPreset(matchPresetValue(nextWidth, nextHeight));
+  }
+
+  function handleDimensionsChange(next: Point2Value, options?: PointInputChangeOptions) {
+    if (isDimensionsLocked(lockedPairs)) {
+      if (options?.sourceAxis === "y") {
+        const nextWidth = clampWidth(clampHeight(next.y) * 2);
+
+        applyDimensions(nextWidth, Math.round(nextWidth / 2));
+        return;
+      }
+
+      const nextWidth = clampWidth(next.x);
+
+      applyDimensions(nextWidth, Math.round(nextWidth / 2));
       return;
     }
 
-    const url = URL.createObjectURL(pngBlob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `skybox-studio-${formatExportTimestamp()}.png`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    applyDimensions(next.x, next.y);
   }
 
-  return (
-    <div className="flex min-w-[min(720px,calc(100vw-4rem))] flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-muted-foreground" htmlFor="export-width">
-          Width
-        </label>
-        <Input
-          className="h-8 w-28 text-xs"
-          id="export-width"
-          inputMode="numeric"
-          max={MAX_EXPORT_WIDTH}
-          min={MIN_EXPORT_WIDTH}
-          onBlur={() => setWidthInput(String(exportWidth))}
-          onChange={(event) => setWidthInput(event.target.value)}
-          type="number"
-          value={widthInput}
-        />
-        <span className="text-xs text-muted-foreground">Height {exportHeight}</span>
-      </div>
+  function handlePresetChange(value: string) {
+    if (value === CUSTOM_PRESET_VALUE) {
+      return;
+    }
 
-      <div className="transparent-checker-sm flex aspect-[2/1] max-h-[55vh] min-h-48 items-center justify-center overflow-hidden rounded-md border">
-        {status === "loading" ? (
-          <Loader2 className="animate-spin text-muted-foreground" />
-        ) : previewUrl ? (
-          <img
-            alt="Baked skybox export preview"
-            className="size-full object-contain"
-            src={previewUrl}
-          />
-        ) : (
-          <span className="text-xs text-muted-foreground">No preview</span>
-        )}
+    const nextPreset = EXPORT_PRESETS.find((entry) => entry.value === value);
+
+    if (!nextPreset) {
+      return;
+    }
+
+    setLockedPairs([DIMENSIONS_LOCK_PAIR]);
+    setDimensions({ height: nextPreset.height, width: nextPreset.width });
+    setPreset(nextPreset.value);
+  }
+
+  function handleFormatChange(value: string) {
+    setFormat(value);
+    setQuality(getSkyboxExporter(value)?.quality?.default ?? 1);
+  }
+
+  async function handleSave() {
+    const exporter = currentExporter;
+
+    if (!exporter || status !== "ready") {
+      return;
+    }
+
+    setError("");
+
+    try {
+      if (exporter.hdr) {
+        const gpu = gpuRef.current;
+
+        if (!gpu) {
+          throw new Error("EXR export requires WebGPU.");
+        }
+
+        const starfieldTextures = bakeStarfieldTextures(gpu.starfieldService, manifest, exportWidth);
+        const imageTextures = await loadSkyboxImageTextures(manifest);
+        const { dispose, target } = gpu.skyboxService.bakeRenderTarget(manifest, {
+          // EXRExporter flips scanlines unconditionally (it assumes WebGL bottom-up readback);
+          // our WebGPU readback is top-down, so pre-flip here to cancel it and keep the EXR upright.
+          flipY: true,
+          height: exportHeight,
+          hdr: true,
+          imageTextures,
+          starfieldTextures,
+          width: exportWidth,
+        });
+
+        setIsSaving(true);
+
+        try {
+          const blob = await exporter.encode({
+            kind: "hdr",
+            renderTarget: target,
+            renderer: gpu.renderer,
+          });
+
+          downloadBlob(blob, `skybox-studio-${formatExportTimestamp()}.${exporter.extension}`);
+        } finally {
+          dispose();
+          disposeSkyboxImageTextures(imageTextures);
+          setIsSaving(false);
+        }
+
+        return;
+      }
+
+      const baked = bakedRef.current;
+
+      if (!baked) {
+        return;
+      }
+
+      const blob = await exporter.encode(
+        { data: baked.data, height: baked.height, kind: "ldr", width: baked.width },
+        { quality }
+      );
+
+      downloadBlob(blob, `skybox-studio-${formatExportTimestamp()}.${exporter.extension}`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Export failed.");
+    }
+  }
+
+  const exrUnavailable = Boolean(currentExporter?.hdr) && !gpuReady;
+  const canSave = status === "ready" && !isSaving && !exrUnavailable;
+
+  return (
+    <div className="flex min-w-[min(860px,calc(100vw-4rem))] flex-col gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row-reverse sm:items-start">
+        <div className="flex w-full flex-col gap-4 sm:w-64 sm:shrink-0">
+      <FieldGroup contentClassName="flex flex-col gap-2" label="Resolution">
+        <Select onValueChange={handlePresetChange} value={preset}>
+          <SelectTrigger
+            aria-label="Export resolution preset"
+            className="w-full bg-background text-xs"
+            size="sm"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EXPORT_PRESETS.map((entry) => (
+              <SelectItem className="text-xs" key={entry.value} value={entry.value}>
+                {entry.label}
+              </SelectItem>
+            ))}
+            {preset === CUSTOM_PRESET_VALUE ? (
+              <SelectItem className="text-xs" value={CUSTOM_PRESET_VALUE}>
+                Custom · {exportWidth}×{exportHeight}
+              </SelectItem>
+            ) : null}
+          </SelectContent>
+        </Select>
+
+        <Point2Input
+          fields={{
+            x: { label: "W", max: MAX_EXPORT_WIDTH, min: MIN_EXPORT_WIDTH, step: 2 },
+            y: { label: "H", max: MAX_EXPORT_HEIGHT, min: MIN_EXPORT_HEIGHT, step: 1 },
+          }}
+          formatValue={(value) => String(Math.round(value))}
+          label="Size"
+          layout="vertical"
+          locks={[{ defaultLocked: true, optional: true, pair: DIMENSIONS_LOCK_PAIR }]}
+          lockedPairs={lockedPairs}
+          onLockedPairsChange={setLockedPairs}
+          onValueChange={handleDimensionsChange}
+          value={{ x: exportWidth, y: exportHeight }}
+        />
+      </FieldGroup>
+
+      <FieldGroup contentClassName="flex flex-col gap-2" label="Format">
+        <Select onValueChange={handleFormatChange} value={format}>
+          <SelectTrigger aria-label="Export format" className="w-full bg-background text-xs" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EXPORTERS.map((exporter) => (
+              <SelectItem
+                className="text-xs"
+                disabled={exporter.hdr && !gpuReady}
+                key={exporter.id}
+                value={exporter.id}
+              >
+                {exporter.label}
+                {exporter.hdr && !gpuReady ? " · needs WebGPU" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {currentExporter?.quality ? (
+          <div className="flex items-center gap-3">
+            <span className="w-12 shrink-0 text-xs text-muted-foreground">Quality</span>
+            <Slider
+              aria-label="Export quality"
+              className="flex-1"
+              max={currentExporter.quality.max}
+              min={currentExporter.quality.min}
+              onValueChange={([value]) => setQuality(value)}
+              step={currentExporter.quality.step}
+              value={[quality]}
+            />
+            <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+              {Math.round(quality * 100)}%
+            </span>
+          </div>
+        ) : null}
+
+        {currentExporter?.hdr ? (
+          <span className="text-[0.6875rem] text-muted-foreground">
+            HDR · linear half-float. Preview shown in SDR.
+          </span>
+        ) : null}
+      </FieldGroup>
+        </div>
+
+        <ImagePreview
+          alt="Baked skybox export preview"
+          className="aspect-[2/1] max-h-[55vh] min-h-48 w-full sm:w-auto sm:flex-1"
+          emptyState={<span className="text-xs text-muted-foreground">No preview</span>}
+          naturalHeight={exportHeight}
+          naturalWidth={exportWidth}
+          src={previewUrl}
+          status={status === "loading" ? "loading" : "ready"}
+        />
       </div>
 
       {error ? (
@@ -350,8 +641,8 @@ export function BakePreview() {
       ) : null}
 
       <div className="flex justify-end">
-        <Button disabled={!pngBlob || status !== "ready"} onClick={handleSave} type="button">
-          Save
+        <Button disabled={!canSave} onClick={() => void handleSave()} type="button">
+          {isSaving ? "Saving…" : `Save ${currentExporter?.extension.toUpperCase() ?? ""}`.trim()}
         </Button>
       </div>
     </div>

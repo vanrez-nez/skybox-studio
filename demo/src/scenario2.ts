@@ -75,6 +75,15 @@ function setStatus(message: string) {
   statusEl.textContent = message;
 }
 
+// renderHeight is the LOGICAL (CSS) viewport height — not multiplied by devicePixelRatio — so star
+// size stays constant in apparent (CSS) pixels across high-DPI displays.
+function applyStarGlintViewport(target: Skybox) {
+  target.setStarGlintViewport({
+    renderHeight: window.innerHeight,
+    verticalFovRadians: THREE.MathUtils.degToRad(camera.fov),
+  });
+}
+
 function syncButtons() {
   liveButton.dataset.active = String(mode === "live");
   bakedButton.dataset.active = String(mode === "baked");
@@ -121,6 +130,9 @@ async function rebuild() {
 
     next.load();
     next.setImageTextures(await loadImageTextures(bundle));
+    // Size starfield stars to a fixed logical-pixel size for this viewport (vertical FOV + logical
+    // height) so they match the editor's design instead of scaling with this demo's FOV/DPR.
+    applyStarGlintViewport(next);
     scene.add(next);
     skybox = next;
   } else {
@@ -220,6 +232,10 @@ function resize() {
   renderer.setSize(width, height);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+
+  if (skybox) {
+    applyStarGlintViewport(skybox);
+  }
 }
 
 window.addEventListener("resize", resize);

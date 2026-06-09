@@ -1222,6 +1222,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(nextWidth, nextHeight, false);
+      // Size starfield stars to a fixed logical-pixel size for THIS viewport (vertical FOV +
+      // logical height) so they look identical here and in any consumer/export at the same FOV.
+      liveSkybox.setStarGlintViewport({
+        renderHeight: nextHeight,
+        verticalFovRadians: THREE.MathUtils.degToRad(camera.fov),
+      });
       render();
     };
 

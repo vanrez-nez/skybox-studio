@@ -53,6 +53,13 @@ const DIMENSIONS_LOCK_PAIR: LockPair = ["x", "y"];
 // Image export flattens the starfield to a static texture, so the quality setting (a runtime memory
 // budget) no longer applies — always bake at the highest quality for the sharpest result.
 const IMAGE_EXPORT_STARFIELD_QUALITY: SkyboxStarfieldQuality = "high";
+// An exported equirect panorama has no single camera, so star sizing assumes a canonical viewer
+// height (logical px) at the chosen viewing FOV. Viewers at other heights scale proportionally —
+// inherent to a static texture. 1080 matches the editor's 1080p reference preset.
+const REFERENCE_VIEWER_HEIGHT = 1080;
+const DEFAULT_VIEWING_FOV_DEGREES = 50;
+const MIN_VIEWING_FOV_DEGREES = 10;
+const MAX_VIEWING_FOV_DEGREES = 120;
 
 type ExportPreset = {
   height: number;
@@ -187,6 +194,7 @@ export function BakePreview() {
   const [preset, setPreset] = useState(DEFAULT_PRESET.value);
   const [format, setFormat] = useState(DEFAULT_EXPORTER_ID);
   const [quality, setQuality] = useState(1);
+  const [viewingFov, setViewingFov] = useState(DEFAULT_VIEWING_FOV_DEGREES);
   const [exporterSelects, setExporterSelects] = useState<Record<string, string>>(() =>
     defaultExporterSelects(DEFAULT_EXPORTER_ID)
   );
@@ -204,6 +212,11 @@ export function BakePreview() {
   const manifest = useMemo(
     () => createSkyboxManifest(effectLayers, null, { type: skyGeometryType }),
     [effectLayers, skyGeometryType]
+  );
+  // The viewing-FOV control only affects starfield star sizing, so hide it when there are none.
+  const hasStarfield = useMemo(
+    () => collectStarfieldLayers(migrateManifestToV2(manifest).nodes).length > 0,
+    [manifest]
   );
   const currentExporter = getSkyboxExporter(format);
 
@@ -285,15 +298,22 @@ export function BakePreview() {
   const bakeStarfieldTextures = (
     starfieldService: StarfieldGpuBakeService,
     bakeManifest: SkyboxManifest,
-    width: number
+    width: number,
+    viewingFovDegrees: number
   ) => {
     const starfieldLayers = collectStarfieldLayers(migrateManifestToV2(bakeManifest).nodes);
     const textures = new Map<string, THREE.Texture>();
+    // Size stars to a fixed logical-pixel size for the chosen viewing FOV at the canonical viewer
+    // height, matching how the live editor sizes them (see Skybox.setStarGlintViewport).
+    const viewport = {
+      renderHeight: REFERENCE_VIEWER_HEIGHT,
+      verticalFovRadians: THREE.MathUtils.degToRad(viewingFovDegrees),
+    };
 
     starfieldLayers.forEach((layer) => {
       const params = { ...layer.params, quality: IMAGE_EXPORT_STARFIELD_QUALITY };
-      const key = starfieldService.createBakeKey(params, width);
-      const texture = starfieldService.bakeTexture(params, key, width);
+      const key = starfieldService.createBakeKey(params, width, viewport);
+      const texture = starfieldService.bakeTexture(params, key, width, viewport);
 
       textures.set(layer.id, texture);
     });
@@ -306,10 +326,11 @@ export function BakePreview() {
   const runGpuBake = async (
     bakeManifest: SkyboxManifest,
     width: number,
-    height: number
+    height: number,
+    viewingFovDegrees: number
   ): Promise<BakedSkyboxImageData> => {
     const { skyboxService, starfieldService } = await ensureGpuContext();
-    const starfieldTextures = bakeStarfieldTextures(starfieldService, bakeManifest, width);
+    const starfieldTextures = bakeStarfieldTextures(starfieldService, bakeManifest, width, viewingFovDegrees);
     const imageTextures = await loadSkyboxImageTextures(bakeManifest);
 
     try {
@@ -398,7 +419,7 @@ export function BakePreview() {
 
       void (async () => {
         try {
-          const baked = await runGpuBake(manifest, exportWidth, exportHeight);
+          const baked = await runGpuBake(manifest, exportWidth, exportHeight, viewingFov);
 
           if (id !== requestIdRef.current) {
             return;
@@ -437,7 +458,7 @@ export function BakePreview() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [exportWidth, exportHeight, manifest]);
+  }, [exportWidth, exportHeight, manifest, viewingFov]);
 
   function applyDimensions(width: number, height: number) {
     const nextWidth = clampWidth(width);
@@ -504,7 +525,7 @@ export function BakePreview() {
           throw new Error("EXR export requires WebGPU.");
         }
 
-        const starfieldTextures = bakeStarfieldTextures(gpu.starfieldService, manifest, exportWidth);
+        const starfieldTextures = bakeStarfieldTextures(gpu.starfieldService, manifest, exportWidth, viewingFov);
         const imageTextures = await loadSkyboxImageTextures(manifest);
 
         setIsSaving(true);
@@ -603,6 +624,30 @@ export function BakePreview() {
           value={{ x: exportWidth, y: exportHeight }}
         />
       </FieldGroup>
+
+      {hasStarfield ? (
+        <FieldGroup contentClassName="flex flex-col gap-2" label="Star sizing">
+          <div className="flex items-center gap-3">
+            <span className="w-16 shrink-0 text-xs text-muted-foreground">Viewing FOV</span>
+            <Slider
+              aria-label="Starfield viewing FOV"
+              className="flex-1"
+              max={MAX_VIEWING_FOV_DEGREES}
+              min={MIN_VIEWING_FOV_DEGREES}
+              onValueChange={([value]) => setViewingFov(value)}
+              step={1}
+              value={[viewingFov]}
+            />
+            <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+              {Math.round(viewingFov)}°
+            </span>
+          </div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Stars are sized for this vertical field of view (≈{REFERENCE_VIEWER_HEIGHT}px-tall
+            viewer). Match it to the FOV the skybox will be viewed at.
+          </p>
+        </FieldGroup>
+      ) : null}
 
       <FieldGroup contentClassName="flex flex-col gap-2" label="Format">
         <Select onValueChange={handleFormatChange} value={format}>

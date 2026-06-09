@@ -1,12 +1,14 @@
-import {
-  DEFAULT_STARFIELD_PARAMS,
-  normalizeStarfieldParams,
-  type SkyboxStarfieldClipParams,
-  type SkyboxStarfieldNebulaParams,
-  type SkyboxStarfieldParams,
-  type SkyboxStarfieldQuality,
-  type SkyboxStarfieldStarsParams,
+import type {
+  SkyboxStarfieldClipParams,
+  SkyboxStarfieldNebulaParams,
+  SkyboxStarfieldParams,
+  SkyboxStarfieldQuality,
+  SkyboxStarfieldStarsParams,
 } from "@/runtime";
+// `@/runtime/starfield` carries the procedural starfield generation + param helpers; importing it
+// here (the starfield layer addon, loaded at editor startup) also registers the GPU bake-service
+// factory + CPU sampler the runtime needs to render/bake starfields.
+import { DEFAULT_STARFIELD_PARAMS, normalizeStarfieldParams } from "@/runtime/starfield";
 import {
   createDefaultFieldGradientState,
   type FieldGradientAnchor,

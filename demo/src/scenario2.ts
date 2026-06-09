@@ -14,6 +14,10 @@ import {
   type Bundle,
   type LoadProgress,
 } from "skybox-studio-runtime";
+// Enable starfield generation: importing this entry registers the GPU bake-service factory + CPU
+// sampler so loaded bundles that contain a starfield layer render (it's split out of the core so
+// consumers that never use starfields don't pay for it).
+import "skybox-studio-runtime/starfield";
 
 const BAKE_WIDTH = 1024;
 const BUNDLE_BASE = new URL("sample-project/", window.location.href).href;

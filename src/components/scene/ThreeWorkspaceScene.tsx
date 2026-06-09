@@ -24,9 +24,9 @@ import {
   normalizeVector,
   projectDirectionToImageUv,
   Skybox,
-  starfieldClipContainsDirection,
   spotContainsDirection,
 } from "@/runtime/index";
+import { starfieldClipContainsDirection } from "@/runtime/starfield";
 import { SkyboxOrbitControls } from "./SkyboxOrbitControls";
 import {
   IMAGE_PLACEMENT_TRANSACTION_SCOPE,

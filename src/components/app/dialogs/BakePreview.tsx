@@ -32,15 +32,17 @@ import {
 import type { TextureBakeWorkerResponse } from "@/processes/texture-baking.worker";
 import {
   createSkyboxGpuBakeService,
-  createStarfieldGpuBakeService,
   migrateManifestToV2,
   type BakedSkyboxImageData,
   type SkyboxGpuBakeService,
   type SkyboxManifest,
   type SkyboxManifestNode,
   type SkyboxStarfieldQuality,
-  type StarfieldGpuBakeService,
 } from "@/runtime/index";
+import {
+  createStarfieldGpuBakeService,
+  type StarfieldGpuBakeService,
+} from "@/runtime/starfield";
 import { useWorkspaceStore } from "@/store/app";
 
 const MIN_EXPORT_WIDTH = 256;

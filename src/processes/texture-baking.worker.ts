@@ -6,8 +6,11 @@ import {
   type SkyboxManifestLayer,
   type SkyboxManifestNode,
   type SkyboxManifestV2,
-  type StarfieldBakeData,
 } from "@/runtime/index";
+// CPU-baking a starfield needs the starfield CPU sampler registered (it lives in the generation
+// entry now). This import wires that side effect; the type comes from the same entry.
+import { type StarfieldBakeData } from "@/runtime/starfield";
+import "@/runtime/starfield";
 
 export type TextureBakeStarfieldBake = {
   data: ArrayBuffer;

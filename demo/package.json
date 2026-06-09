@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:proxy": "bash scripts/devsite.sh",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

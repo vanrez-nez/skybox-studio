@@ -28,6 +28,7 @@ git submodule update --init --recursive
 | Script | Description |
 |---|---|
 | `npm run dev` | Start the Vite dev server. |
+| `npm run dev:proxy` | Dev server behind Caddy at a stable `http://skybox.localhost` URL (needs `caddy` installed). |
 | `npm run build` | Type-check (`tsc --noEmit`) and build to `dist/`. |
 | `npm run preview` | Preview the production build locally (served under the `/skybox-studio/` base). |
 | `npm run deploy` | Build and publish `dist/` to the `site` branch (GitHub Pages). |

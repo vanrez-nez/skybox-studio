@@ -11,6 +11,8 @@ const app = document.getElementById("app") as HTMLDivElement;
 const fileInput = document.getElementById("file") as HTMLInputElement;
 const cubeButton = document.getElementById("mode-cube") as HTMLButtonElement;
 const domeButton = document.getElementById("mode-dome") as HTMLButtonElement;
+const fovInput = document.getElementById("fov") as HTMLInputElement;
+const fovValue = document.getElementById("fov-value") as HTMLSpanElement;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -118,6 +120,14 @@ cubeButton.addEventListener("click", () => {
 domeButton.addEventListener("click", () => {
   mode = "dome";
   applyMode();
+});
+
+// FOV selector: there's no runtime here, so this just changes the camera — useful for eyeballing
+// how a starfield baked at a given export FOV looks when viewed at a wider/narrower FOV.
+fovInput.addEventListener("input", () => {
+  camera.fov = Number(fovInput.value);
+  camera.updateProjectionMatrix();
+  fovValue.textContent = `${Math.round(camera.fov)}°`;
 });
 
 function resize() {

@@ -31,6 +31,8 @@ const openButton = document.getElementById("open") as HTMLButtonElement;
 const openZipButton = document.getElementById("open-zip") as HTMLButtonElement;
 const zipInput = document.getElementById("zip-input") as HTMLInputElement;
 const statusEl = document.getElementById("status") as HTMLSpanElement;
+const fovInput = document.getElementById("fov") as HTMLInputElement;
+const fovValue = document.getElementById("fov-value") as HTMLSpanElement;
 
 const renderer = new THREE.WebGPURenderer({ antialias: true });
 
@@ -175,6 +177,18 @@ boxButton.addEventListener("click", () => {
   geometry = "box";
   syncButtons();
   void rebuild();
+});
+
+// FOV selector: re-applies the star-glint viewport so stars hold a constant on-screen pixel size as
+// the FOV changes (instead of growing when you narrow the FOV) — the point of setStarGlintViewport.
+fovInput.addEventListener("input", () => {
+  camera.fov = Number(fovInput.value);
+  camera.updateProjectionMatrix();
+  fovValue.textContent = `${Math.round(camera.fov)}°`;
+
+  if (skybox) {
+    applyStarGlintViewport(skybox);
+  }
 });
 
 openButton.addEventListener("click", async () => {

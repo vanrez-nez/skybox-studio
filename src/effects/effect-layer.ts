@@ -5,6 +5,11 @@ import {
   type EffectLayerBlendMode,
 } from "@/effects/blend-modes";
 import {
+  cloneCloudsState,
+  createDefaultCloudsState,
+  type CloudsState,
+} from "@/effects/layers/clouds/state";
+import {
   cloneFieldGradientState,
   createDefaultFieldGradientState,
   type FieldGradientState,
@@ -57,6 +62,11 @@ import {
 export type EffectLayerType = string;
 export type { EffectLayerBlendMode };
 
+export type SerializedCloudsEffect = {
+  params: CloudsState;
+  type: "clouds";
+};
+
 export type SerializedGradientEffect = {
   params: GradientState;
   type: "gradient";
@@ -85,6 +95,7 @@ export type SerializedStarfieldEffect = {
 export type SerializedEffectLayer = {
   blendMode?: EffectLayerBlendMode;
   effect:
+    | SerializedCloudsEffect
     | SerializedGradientEffect
     | SerializedFieldGradientEffect
     | SerializedImageEffect
@@ -265,6 +276,31 @@ function manifestSpotParams(params: SpotState): SkyboxSpotParams {
 function manifestStarfieldParams(params: StarfieldState): SkyboxStarfieldParams {
   return starfieldStateToManifestParams(params);
 }
+
+export const cloudsLayerAddon: EffectLayerAddon<"clouds", CloudsState> = {
+  cloneParams: cloneCloudsState,
+  createDefaultParams: createDefaultCloudsState,
+  defaultBlendMode: "normal",
+  displayName: "Clouds",
+  getDefaultName: () => "Clouds",
+  load: (serialized) => cloneCloudsState(serialized.params),
+  serialize: (params) => ({ params: cloneCloudsState(params), type: "clouds" }),
+  // The editor params are the runtime params verbatim — no editor-only fields to drop.
+  toManifestParams: (params) => cloneCloudsState(params),
+  runtime: {
+    // Structural only. Every cloud param is a continuously-dragged scalar or colour, so this stays
+    // constant and edits take the Direct (uniform-push) path instead of rebuilding the material.
+    getTopologyKey: (layer) => ({
+      enabled: layer.enabled,
+      id: layer.id,
+      type: layer.type,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateLayer(layer.id, manifestLayer.params);
+    },
+  },
+  type: "clouds",
+};
 
 export const gradientLayerAddon: EffectLayerAddon<"gradient", GradientState> = {
   cloneParams: cloneGradientState,
@@ -501,6 +537,7 @@ export const starfieldLayerAddon: EffectLayerAddon<"starfield", StarfieldState> 
 
 export const builtInEffectLayerAddons = [
   gradientLayerAddon,
+  cloudsLayerAddon,
   fieldGradientLayerAddon,
   spotLayerAddon,
   imageLayerAddon,

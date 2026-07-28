@@ -20,6 +20,10 @@ import {
   type ImageState,
 } from "@/effects/layers/image/state";
 import type {
+  CloudsNumericParameterKey,
+  CloudsState,
+} from "@/effects/layers/clouds/state";
+import type {
   FieldGradientAnchor,
   FieldGradientMode,
   FieldGradientState,
@@ -57,6 +61,8 @@ import {
 export { IMAGE_PLACEMENT_TRANSACTION_SCOPE };
 export type {
   EffectLayerBlendModePreview,
+  CloudsNumericParameterKey,
+  CloudsState,
   FieldGradientAnchor,
   FieldGradientMode,
   FieldGradientState,

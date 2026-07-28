@@ -21,6 +21,7 @@ describe("effect layer addons", () => {
   it("registers built-in addons in layer creation order", () => {
     expect(getEffectLayerAddons().map((addon) => addon.type)).toEqual([
       "gradient",
+      "clouds",
       "field-gradient",
       "spot",
       "image",

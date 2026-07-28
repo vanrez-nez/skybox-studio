@@ -83,9 +83,27 @@ function ColorisInlinePicker({
       }
     };
 
+    // Coloris caches the colour area's page offset once, when it is configured, and in inline mode
+    // only recomputes it on window resize. That measurement happens before the floating Widget has
+    // been positioned and clamped into the viewport, so every pointer position is offset by however
+    // far the panel subsequently moved — near the right edge the shift is wide enough that clicks
+    // clamp to the left of the gradient and only ever produce greys.
+    //
+    // Re-measuring immediately before each interaction is the reliable fix: by then the panel has
+    // settled, and it also survives the panel being moved or the sidebar being scrolled afterwards.
+    const syncPickerPosition = () => {
+      Coloris.updatePosition();
+    };
+
+    syncPickerPosition();
+    picker.addEventListener("pointerdown", syncPickerPosition, true);
+    window.addEventListener("scroll", syncPickerPosition, true);
+
     document.addEventListener("coloris:pick", handlePick);
 
     return () => {
+      picker.removeEventListener("pointerdown", syncPickerPosition, true);
+      window.removeEventListener("scroll", syncPickerPosition, true);
       document.removeEventListener("coloris:pick", handlePick);
       Coloris.close();
     };

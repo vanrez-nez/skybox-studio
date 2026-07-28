@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
 
 import { stripEffectLayerRuntimeData } from "@/effects/effect-layer";
+import { createDefaultSceneParams, type SceneParams } from "@/scenarios/scene-params";
 import {
   createLayersSlice,
   layersHistoryParticipant,
@@ -45,9 +46,12 @@ export type WorkspaceStore = SceneSlice & LayersSlice & HistorySlice;
 
 type PersistedWorkspacePreferences = Pick<
   WorkspaceStore,
+  | "activeScenarioId"
   | "activeView"
   | "cameraRotationMode"
   | "effectLayers"
+  | "sceneParams"
+  | "scenarioParams"
   | "sceneRenderMode"
   | "selectedLayerId"
   | "skyGeometryType"
@@ -72,6 +76,22 @@ function unshiftHistorySnapshot(
   snapshot: HistorySnapshot
 ): HistorySnapshot[] {
   return [snapshot, ...history].slice(0, MAX_HISTORY_OPERATIONS);
+}
+
+function mergeSceneParams(persisted: SceneParams | undefined): SceneParams {
+  const defaults = createDefaultSceneParams();
+
+  if (!persisted) {
+    return defaults;
+  }
+
+  return {
+    ...defaults,
+    ...persisted,
+    ambient: { ...defaults.ambient, ...persisted.ambient },
+    fog: { ...defaults.fog, ...persisted.fog },
+    sun: { ...defaults.sun, ...persisted.sun },
+  };
 }
 
 function omitRuntimeLayerData(effectLayers: WorkspaceStore["effectLayers"]) {
@@ -303,8 +323,11 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     {
       name: "skybox-studio-session",
       partialize: (state): PersistedWorkspacePreferences => ({
+        activeScenarioId: state.activeScenarioId,
         activeView: state.activeView,
         cameraRotationMode: state.cameraRotationMode,
+        sceneParams: state.sceneParams,
+        scenarioParams: state.scenarioParams,
         effectLayers: omitRuntimeLayerData(state.effectLayers),
         sceneRenderMode: state.sceneRenderMode === "texture-baked" ? "live" : state.sceneRenderMode,
         selectedLayerId: state.selectedLayerId,
@@ -322,6 +345,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         return {
           ...nextState,
           effectLayers: normalizeEffectLayerLockState(nextState.effectLayers),
+          // Backfill scene params written by an older build so a newly added light/fog field is
+          // never undefined (the shallow spread above would otherwise keep the stale object).
+          sceneParams: mergeSceneParams(nextState.sceneParams),
         } as WorkspaceStore;
       },
       storage: createTransactionAwareSessionStorage<PersistedWorkspacePreferences>(),

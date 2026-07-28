@@ -27,6 +27,10 @@ import {
   spotContainsDirection,
 } from "@/runtime/index";
 import { starfieldClipContainsDirection } from "@/runtime/starfield";
+import { findScenarioAddon, type ScenarioInstance } from "@/scenarios/scenario";
+import { SceneEnvironment, sunDirectionFromAngles } from "@/scenarios/scene-environment";
+import type { SceneParams } from "@/scenarios/scene-params";
+import { SkyEnvironment, sunFromSky } from "@/scenarios/sky-environment";
 import { SkyboxOrbitControls } from "./SkyboxOrbitControls";
 import {
   IMAGE_PLACEMENT_TRANSACTION_SCOPE,
@@ -158,6 +162,15 @@ function getDraggedCenterDirection(
 }
 
 const SPOT_PLACEMENT_TRANSACTION_SCOPE = "spot-placement";
+const EDITOR_CAMERA_FOV = 50;
+const EDITOR_CAMERA_FAR = 100;
+// The skybox never depth-tests, so a far plane this large costs nothing there — it exists so a
+// full-size scenario heightfield fits inside the frustum.
+const PREVIEW_CAMERA_FAR = 4000;
+// Mesh name the runtime gives its live star-glint children (createStarfieldGlints).
+const STARFIELD_GLINT_NAME = "Starfield glints";
+// Between the sky composite (-1) and scenario geometry (0).
+const STARFIELD_GLINT_RENDER_ORDER = -0.5;
 
 export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -175,6 +188,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const lookAtAxisDirectionRef = useRef<((direction: VectorTuple) => void) | null>(null);
   const focusLayerRef = useRef<((layerId: string) => void) | null>(null);
   const resetOrientationRef = useRef<(() => void) | null>(null);
+  const setPreviewActiveRef = useRef<((active: boolean) => void) | null>(null);
+  const setScenarioRef = useRef<((id: string, params: unknown) => void) | null>(null);
+  const setScenarioParamsRef = useRef<((params: unknown) => void) | null>(null);
+  const setSceneParamsRef = useRef<((params: SceneParams) => void) | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const [gizmoOrientation, setGizmoOrientation] = useState<QuaternionTuple>(() =>
     quaternionToTuple(new THREE.Quaternion().setFromEuler(INITIAL_CAMERA_ROTATION))
@@ -198,6 +215,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const showGroundPlaneHelper = useWorkspaceStore((state) => state.showGroundPlaneHelper);
   const showOrientationGizmo = useWorkspaceStore((state) => state.showOrientationGizmo);
   const showSkyGeometry = useWorkspaceStore((state) => state.showSkyGeometry);
+  const activeScenarioId = useWorkspaceStore((state) => state.activeScenarioId);
+  const scenarioParams = useWorkspaceStore((state) => state.scenarioParams[state.activeScenarioId]);
+  const sceneParams = useWorkspaceStore((state) => state.sceneParams);
+  const isPreview = mode === "preview";
   useEffect(() => {
     effectLayersRef.current = effectLayers;
     selectedLayerIdRef.current = selectedLayerId;
@@ -216,8 +237,22 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   }, []);
 
   useEffect(() => {
+    setPreviewActiveRef.current?.(isPreview);
     renderRef.current?.();
-  }, [mode]);
+  }, [isPreview]);
+
+  // Scenario identity change rebuilds; params-only changes go through the cheaper update path.
+  useEffect(() => {
+    setScenarioRef.current?.(activeScenarioId, scenarioParams);
+  }, [activeScenarioId]);
+
+  useEffect(() => {
+    setScenarioParamsRef.current?.(scenarioParams);
+  }, [scenarioParams]);
+
+  useEffect(() => {
+    setSceneParamsRef.current?.(sceneParams);
+  }, [sceneParams]);
 
   useEffect(() => {
     setCameraRotationModeRef.current?.(cameraRotationMode);
@@ -332,15 +367,76 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       material.toneMapped = false;
       material.transparent = true;
     });
+    // The sky must render identically in Editor and Preview, which means opting it out of both
+    // scene-wide effects Preview turns on:
+    //   - tone mapping: the sky is authored in display space, so ACES would shift every colour;
+    //   - fog: the skybox draws at maximum depth (its vertex node forces z = w), so linear fog
+    //     evaluates to 100% and would replace the sky wholesale with the fog colour.
+    // Skybox rebuilds its material whenever the manifest changes, so this has to be re-applied
+    // after every sync rather than set once at construction.
+    // Both flags feed shader compilation, so flipping them on an already-built material needs an
+    // explicit needsUpdate. Only set it when something actually changed, to avoid recompiling the
+    // sky on every unrelated sync.
+    const applySkyboxRenderFlags = () => {
+      const material = liveSkybox.material;
+
+      if (material.toneMapped || material.fog) {
+        material.toneMapped = false;
+        material.fog = false;
+        material.needsUpdate = true;
+      }
+
+      applyStarGlintRenderOrder();
+    };
+
+    // Starfield glints are screen-space quads the runtime adds as children of the skybox. They are
+    // additive + depthTest:false and ship as `transparent`, which puts them in the transparent queue
+    // — drawn after ALL opaque geometry, so a scenario's terrain could never occlude them and stars
+    // showed through the ground.
+    //
+    // Moving them into the opaque queue, ordered between the sky composite (-1) and scenario
+    // geometry (0), makes the terrain paint over them. Additive blending is order-independent and
+    // they still don't write depth, so nothing else about their appearance changes — in the Editor,
+    // where there is no scene geometry, the result is pixel-identical.
+    //
+    // Done here rather than in the runtime: the glint meshes are rebuilt whenever starfield params
+    // change, and the depth-based alternative needs a shader change in the submodule.
+    const applyStarGlintRenderOrder = () => {
+      liveSkybox.children.forEach((child) => {
+        if (child.name !== STARFIELD_GLINT_NAME) {
+          return;
+        }
+
+        const glintMaterial = (child as THREE.Mesh).material as THREE.Material | undefined;
+
+        if (glintMaterial?.transparent) {
+          glintMaterial.transparent = false;
+          glintMaterial.needsUpdate = true;
+        }
+
+        child.renderOrder = STARFIELD_GLINT_RENDER_ORDER;
+      });
+    };
+
+    applySkyboxRenderFlags();
+
+    const scenarioRoot = new THREE.Group();
+    const sceneEnvironment = new SceneEnvironment(scene);
+
     scene.add(liveSkybox);
     scene.add(skyGeometry);
     scene.add(groundPlaneHelper);
+    scene.add(scenarioRoot);
 
     const render = () => {
       if (!rendererReady || disposed) {
         return;
       }
 
+      // Skybox swaps its material on any manifest / editor-presentation change, which resets these
+      // to their defaults. Re-asserting here catches every rebuild; the guard inside makes it two
+      // boolean reads when nothing changed.
+      applySkyboxRenderFlags();
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, canvas.width, canvas.height);
       renderer.render(scene, camera);
@@ -354,6 +450,176 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
     setGroundPlaneHelperVisibleRef.current = (visible) => {
       groundPlaneHelper.visible = visible;
+      render();
+    };
+
+    // ── Preview scenario ──────────────────────────────────────────────────────────────────────
+    const buildSkyboxManifest = () => {
+      const state = useWorkspaceStore.getState();
+
+      return createSkyboxManifest(state.effectLayers, state.previewEffectLayerBlendMode, {
+        type: state.skyGeometryType,
+      });
+    };
+    const imageTextureMap = () =>
+      new Map(
+        Array.from(imageTextureRecords.entries())
+          .filter(([, record]) => record.ready)
+          .map(([layerId, record]) => [layerId, record.texture] as const)
+      );
+
+    let previewActive = false;
+    let scenarioInstance: ScenarioInstance<unknown> | null = null;
+    let scenarioId = "";
+    let currentSceneParams: SceneParams | null = null;
+    let animationHandle: number | null = null;
+    let lastFrameTime = 0;
+    const skyEnvironment = new SkyEnvironment(renderer, (environment) => {
+      sceneEnvironment.setEnvironment(environment);
+      render();
+    });
+
+    // Only runs while a scenario declares animate(); terrain doesn't, so the viewport stays
+    // on-demand exactly as it is today.
+    const stopAnimation = () => {
+      if (animationHandle !== null) {
+        window.cancelAnimationFrame(animationHandle);
+        animationHandle = null;
+      }
+    };
+    const tick = (time: number) => {
+      if (disposed || !scenarioInstance?.animate) {
+        animationHandle = null;
+        return;
+      }
+
+      const delta = lastFrameTime === 0 ? 0 : (time - lastFrameTime) / 1000;
+
+      lastFrameTime = time;
+      scenarioInstance.animate(delta);
+      render();
+      animationHandle = window.requestAnimationFrame(tick);
+    };
+    const syncAnimation = () => {
+      if (previewActive && scenarioInstance?.animate) {
+        if (animationHandle === null) {
+          lastFrameTime = 0;
+          animationHandle = window.requestAnimationFrame(tick);
+        }
+
+        return;
+      }
+
+      stopAnimation();
+    };
+
+    const applySceneParams = () => {
+      if (!currentSceneParams) {
+        return;
+      }
+
+      const params = currentSceneParams;
+      const linked = params.sun.linkToSky ? sunFromSky(buildSkyboxManifest()) : null;
+
+      sceneEnvironment.apply(params, {
+        color: linked?.color ?? new THREE.Color(params.sun.color),
+        direction:
+          linked?.direction ?? sunDirectionFromAngles(params.sun.azimuth, params.sun.elevation),
+      });
+
+      if (camera.fov !== params.fov) {
+        camera.fov = params.fov;
+        camera.updateProjectionMatrix();
+        // Star glints are sized from the vertical FOV — same contract resize() honours.
+        liveSkybox.setStarGlintViewport({
+          renderHeight: Math.max(1, Math.round(container.getBoundingClientRect().height)),
+          verticalFovRadians: THREE.MathUtils.degToRad(camera.fov),
+        });
+      }
+    };
+
+    const teardownScenario = () => {
+      stopAnimation();
+
+      if (scenarioInstance) {
+        scenarioRoot.remove(scenarioInstance.root);
+        scenarioInstance.dispose();
+        scenarioInstance = null;
+      }
+    };
+
+    const buildScenario = (id: string, params: unknown) => {
+      teardownScenario();
+      scenarioId = id;
+
+      const addon = findScenarioAddon(id);
+
+      if (!addon || !previewActive) {
+        return;
+      }
+
+      scenarioInstance = addon.build(
+        { camera, renderer, requestRender: render },
+        params ?? addon.createDefaultParams()
+      ) as ScenarioInstance<unknown>;
+      scenarioRoot.add(scenarioInstance.root);
+      syncAnimation();
+    };
+
+    setPreviewActiveRef.current = (active) => {
+      if (previewActive === active) {
+        return;
+      }
+
+      previewActive = active;
+
+      if (active) {
+        // Editor affordances have no place in a preview: selection overlays, the sky wireframe and
+        // the ground grid all disappear, and pointer editing is gated below.
+        liveSkybox.setEditorPresentationEnabled(false);
+        skyGeometry.visible = false;
+        groundPlaneHelper.visible = false;
+        // The unit skybox never depth-tests, so a far plane this large costs nothing there but lets
+        // a full-size heightfield fit.
+        camera.far = PREVIEW_CAMERA_FAR;
+        camera.updateProjectionMatrix();
+        sceneEnvironment.attach();
+        applySceneParams();
+        buildScenario(scenarioId, useWorkspaceStore.getState().scenarioParams[scenarioId]);
+        skyEnvironment.requestRebake(buildSkyboxManifest(), imageTextureMap());
+      } else {
+        const state = useWorkspaceStore.getState();
+
+        teardownScenario();
+        sceneEnvironment.detach();
+        liveSkybox.setEditorPresentationEnabled(true);
+        skyGeometry.visible = state.showSkyGeometry;
+        groundPlaneHelper.visible = state.showGroundPlaneHelper;
+        camera.far = EDITOR_CAMERA_FAR;
+        camera.fov = EDITOR_CAMERA_FOV;
+        camera.updateProjectionMatrix();
+      }
+
+      render();
+    };
+
+    setScenarioRef.current = (id, params) => {
+      buildScenario(id, params);
+      render();
+    };
+
+    setScenarioParamsRef.current = (params) => {
+      if (!scenarioInstance) {
+        return;
+      }
+
+      scenarioInstance.update(params ?? findScenarioAddon(scenarioId)?.createDefaultParams());
+      render();
+    };
+
+    setSceneParamsRef.current = (params) => {
+      currentSceneParams = params;
+      applySceneParams();
       render();
     };
 
@@ -626,6 +892,12 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         previewBlendMode: state.previewEffectLayerBlendMode,
         skyGeometryType: state.skyGeometryType,
       });
+      // The scenario is lit by the sky, so an edit to the sky has to re-bake the env map (and, when
+      // the sun is linked, move the sun). Debounced inside SkyEnvironment.
+      if (previewActive) {
+        skyEnvironment.requestRebake(buildSkyboxManifest(), imageTextureMap());
+        applySceneParams();
+      }
     };
 
     editorSkyboxSync.prime({
@@ -1110,7 +1382,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) {
+      // Layer picking and dragging are editing affordances — Preview is look-only.
+      if (event.button !== 0 || previewActive) {
         return;
       }
 
@@ -1154,6 +1427,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     const onDoubleClick = (event: MouseEvent) => {
+      if (previewActive) {
+        return;
+      }
+
       event.preventDefault();
       const hits = getSceneLayerHits(event);
 
@@ -1175,6 +1452,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      if (previewActive) {
+        return;
+      }
+
       if (imageDragState.pointerId === event.pointerId) {
         event.preventDefault();
         imageDragState.hasMoved = true;
@@ -1244,6 +1525,18 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       liveSkybox.setEditorPresentationEnabled(true);
       syncSkybox();
       resize();
+
+      // Prime the preview state here rather than in the driver effects: those run before this
+      // effect assigns the refs, and the env bake needs an initialised renderer anyway.
+      const state = useWorkspaceStore.getState();
+
+      currentSceneParams = state.sceneParams;
+      scenarioId = state.activeScenarioId;
+
+      if (state.activeView === "preview") {
+        setPreviewActiveRef.current?.(true);
+      }
+
       // Surface the local readiness flag so the splash knows the app is actually usable.
       useWorkspaceStore.getState().setRendererReady(true);
     });
@@ -1251,6 +1544,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     return () => {
       disposed = true;
       renderRef.current = null;
+      setPreviewActiveRef.current = null;
+      setScenarioRef.current = null;
+      setScenarioParamsRef.current = null;
+      setSceneParamsRef.current = null;
+      teardownScenario();
+      sceneEnvironment.dispose();
+      skyEnvironment.dispose();
       setGroundPlaneHelperVisibleRef.current = null;
       setSkyGeometryVisibleRef.current = null;
       setCameraRotationModeRef.current = null;

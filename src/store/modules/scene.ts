@@ -1,5 +1,10 @@
 import type { StateCreator } from "zustand";
 
+import "@/scenarios/none";
+import { createDefaultSceneParams, type SceneParams } from "@/scenarios/scene-params";
+import { findScenarioAddon } from "@/scenarios/scenario";
+import { TERRAIN_SCENARIO_ID } from "@/scenarios/terrain";
+
 export type WorkspaceView = "editor" | "preview";
 export type MenuId = "file" | "edit" | "layer" | "sky" | "view";
 export type MenuCommandId =
@@ -43,6 +48,12 @@ export type SceneSlice = {
   // Flipped once the WebGPU renderer finishes async init. Never persisted — it must start false on
   // every load. The splash screen reveals its launcher panel off this.
   rendererReady: boolean;
+  // Preview-mode scenario state. This is a VIEWING preference, not part of the sky document, so it
+  // is persisted with the other workspace preferences and never touches SkyboxDocument.
+  activeScenarioId: string;
+  // Per-scenario params, keyed by scenario id, so switching away and back restores the tuning.
+  scenarioParams: Record<string, unknown>;
+  sceneParams: SceneParams;
   emitLayerFocusRequest: (layerId: string) => void;
   emitMenuEvent: (id: MenuEventId) => void;
   setActiveView: (view: WorkspaceView) => void;
@@ -54,7 +65,16 @@ export type SceneSlice = {
   setShowOrientationGizmo: (visible: boolean) => void;
   setShowSkyGeometry: (visible: boolean) => void;
   setRendererReady: (ready: boolean) => void;
+  setActiveScenario: (id: string) => void;
+  // Merges a partial patch into the named scenario's params. Scenario tuning is not undoable —
+  // SceneSlice is not a history participant, matching the existing scene toggles.
+  updateScenarioParams: (id: string, patch: Record<string, unknown>) => void;
+  updateSceneParams: (patch: Partial<SceneParams>) => void;
 };
+
+function scenarioDefaults(id: string): Record<string, unknown> {
+  return (findScenarioAddon(id)?.createDefaultParams() as Record<string, unknown>) ?? {};
+}
 
 export const workspaceViews: Array<{ id: WorkspaceView; label: string }> = [
   { id: "editor", label: "Editor" },
@@ -78,6 +98,9 @@ export const createSceneSlice: StateCreator<
   showOrientationGizmo: true,
   showSkyGeometry: false,
   rendererReady: false,
+  activeScenarioId: TERRAIN_SCENARIO_ID,
+  scenarioParams: {},
+  sceneParams: createDefaultSceneParams(),
   emitLayerFocusRequest: (layerId) =>
     set({ lastLayerFocusRequest: { issuedAt: Date.now(), layerId } }),
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
@@ -90,4 +113,32 @@ export const createSceneSlice: StateCreator<
   setShowOrientationGizmo: (visible) => set({ showOrientationGizmo: visible }),
   setShowSkyGeometry: (visible) => set({ showSkyGeometry: visible }),
   setRendererReady: (ready) => set({ rendererReady: ready }),
+  setActiveScenario: (id) =>
+    set((state) => ({
+      activeScenarioId: id,
+      // Seed the full default set on first selection. Without this the first param patch would be
+      // the entire stored object, leaving every other field undefined.
+      scenarioParams: state.scenarioParams[id]
+        ? state.scenarioParams
+        : { ...state.scenarioParams, [id]: scenarioDefaults(id) },
+    })),
+  updateScenarioParams: (id, patch) =>
+    set((state) => ({
+      scenarioParams: {
+        ...state.scenarioParams,
+        // Defaults underneath so a patch can never drop fields, including ones added by a build
+        // newer than the persisted params.
+        [id]: { ...scenarioDefaults(id), ...(state.scenarioParams[id] as object | undefined), ...patch },
+      },
+    })),
+  updateSceneParams: (patch) =>
+    set((state) => ({
+      sceneParams: {
+        ...state.sceneParams,
+        ...patch,
+        ambient: { ...state.sceneParams.ambient, ...patch.ambient },
+        fog: { ...state.sceneParams.fog, ...patch.fog },
+        sun: { ...state.sceneParams.sun, ...patch.sun },
+      },
+    })),
 });

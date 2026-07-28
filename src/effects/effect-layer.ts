@@ -164,6 +164,9 @@ export type EffectLayerAddon<TType extends string = string, TParams = unknown> =
   getFocusTarget?: (layer: EffectLayer<TParams>) => EffectLayerFocusTarget | null;
   load: (serialized: { params: TParams; type: TType }) => TParams;
   serialize: (params: TParams) => { params: TParams; type: TType };
+  // Drop editor-only runtime data (decoded pixels, object URLs) that must never reach storage. Addons
+  // whose params are already fully serializable can omit this.
+  stripRuntimeParams?: (params: TParams) => TParams;
   toManifestParams: (params: TParams) => Extract<SkyboxManifestLayer, { type: TType }>["params"];
   transformCapabilities?: EffectLayerTransformCapabilities<TParams>;
   runtime: {
@@ -349,6 +352,9 @@ export const imageLayerAddon: EffectLayerAddon<"image", ImageState> = {
   getDefaultName: () => "Image",
   load: (serialized) => cloneImageState(serialized.params),
   serialize: (params) => ({ params: cloneImageState(params), type: "image" }),
+  // Decoded pixels and the object URL are rebuilt from the IndexedDB blob keyed by assetId
+  // (see ThreeWorkspaceScene), so they must never be written to storage — they'd blow the quota.
+  stripRuntimeParams: (params) => ({ ...params, pixels: null, src: null }),
   toManifestParams: manifestImageParams,
   runtime: {
     getTopologyKey: (layer) => ({
@@ -551,6 +557,16 @@ export function getEffectLayerFocusTarget(
   }
 
   return getEffectLayerAddon(layer.type).getFocusTarget?.(layer as never) ?? null;
+}
+
+// Drop every layer's editor-only runtime data (see EffectLayerAddon.stripRuntimeParams) so the result is
+// safe to persist. Layers whose addon has no hook are returned untouched.
+export function stripEffectLayerRuntimeData(layers: EffectLayer[]): EffectLayer[] {
+  return layers.map((layer) => {
+    const strip = getEffectLayerAddon(layer.type).stripRuntimeParams;
+
+    return strip ? { ...layer, params: strip(layer.params as never) } : layer;
+  });
 }
 
 export function serializeEffectLayer(layer: EffectLayer): SerializedEffectLayer {

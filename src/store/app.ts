@@ -3,10 +3,10 @@ import type { StateCreator } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
 
+import { stripEffectLayerRuntimeData } from "@/effects/effect-layer";
 import {
   createLayersSlice,
   layersHistoryParticipant,
-  type ImageState,
   type LayersSlice,
 } from "@/store/modules/layers";
 import { createSceneSlice, type SceneSlice } from "@/store/modules/scene";
@@ -28,6 +28,7 @@ export type HistorySlice = {
   activeHistoryTransaction: HistoryTransaction | null;
   beginHistoryTransaction: (scope?: string) => void;
   cancelHistoryTransaction: (scope?: string) => void;
+  clearHistory: () => void;
   commitHistoryTransaction: (scope?: string) => void;
   createHistoryCheckpoint: (state: WorkspaceStore) => Pick<
     HistorySlice,
@@ -73,23 +74,8 @@ function unshiftHistorySnapshot(
   return [snapshot, ...history].slice(0, MAX_HISTORY_OPERATIONS);
 }
 
-function omitRuntimeImageData(image: ImageState): ImageState {
-  return {
-    ...image,
-    pixels: null,
-    src: null,
-  };
-}
-
-function omitRuntimeImageLayerData(effectLayers: WorkspaceStore["effectLayers"]) {
-  return normalizeEffectLayerLockState(effectLayers).map((layer) =>
-    layer.type === "image"
-      ? {
-          ...layer,
-          params: omitRuntimeImageData(layer.params as ImageState),
-        }
-      : layer
-  );
+function omitRuntimeLayerData(effectLayers: WorkspaceStore["effectLayers"]) {
+  return stripEffectLayerRuntimeData(normalizeEffectLayerLockState(effectLayers));
 }
 
 function normalizeEffectLayerLockState(effectLayers: WorkspaceStore["effectLayers"]) {
@@ -198,6 +184,17 @@ function createHistorySlice(
 
         return { activeHistoryTransaction: null };
       }),
+    // Drop the whole undo stack. Used when the editor swaps to a different document, so undo can't
+    // reach back across the document boundary and restore the previous document's layers.
+    clearHistory: () => {
+      endStorageHistoryTransaction();
+
+      set({
+        activeHistoryTransaction: null,
+        historyFuture: [],
+        historyPast: [],
+      });
+    },
     commitHistoryTransaction: (scope) =>
       set((state) => {
         const transaction = state.activeHistoryTransaction;
@@ -308,7 +305,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       partialize: (state): PersistedWorkspacePreferences => ({
         activeView: state.activeView,
         cameraRotationMode: state.cameraRotationMode,
-        effectLayers: omitRuntimeImageLayerData(state.effectLayers),
+        effectLayers: omitRuntimeLayerData(state.effectLayers),
         sceneRenderMode: state.sceneRenderMode === "texture-baked" ? "live" : state.sceneRenderMode,
         selectedLayerId: state.selectedLayerId,
         skyGeometryType: state.skyGeometryType,

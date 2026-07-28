@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { HotkeyManager } from "@tanstack/hotkeys";
 import type { RegisterableHotkey } from "@tanstack/hotkeys";
 
@@ -27,6 +27,12 @@ import {
 } from "@/store/modules/scene";
 import { getEffectLayerFocusTarget } from "@/effects/effect-layer";
 import { getEffectLayerInterface } from "@/effects/effect-layer-interfaces";
+import { isSkyboxDocument } from "@/effects/skybox-document";
+import {
+  duplicateActiveDocument,
+  importDocumentFromFile,
+  newDocument,
+} from "@/store/document-actions";
 
 type AppMenuItem = {
   disabled?: boolean;
@@ -37,10 +43,11 @@ type AppMenuItem = {
 };
 
 const fileExportItems: AppMenuItem[] = [
+  // "Document" is the project bundle (manifest.json + image assets) — the dialog this menu
+  // previously exposed as "Runtime".
+  { id: "file.export.runtime", label: "Document" },
   { id: "file.export.image", label: "Image" },
-  { id: "file.export.runtime", label: "Runtime" },
 ];
-const fileLoadItems: AppMenuItem[] = [{ id: "file.load", label: "Load" }];
 const LAYER_TRANSFORM_KEYBOARD_SCOPE = "layer-transform-keyboard";
 const LAYER_TRANSFORM_KEYBOARD_COMMIT_DELAY_MS = 300;
 const LAYER_POSITION_DIRECTIONS = [
@@ -142,6 +149,9 @@ export function AppMenu() {
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
   const setEffectLayerLocked = useWorkspaceStore((state) => state.setEffectLayerLocked);
   const toggleEffectLayerEnabled = useWorkspaceStore((state) => state.toggleEffectLayerEnabled);
+  const [lastLoadedFile, setLastLoadedFile] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadInputRef = useRef<HTMLInputElement | null>(null);
   const applyEffectLayerModifierRef = useRef(applyEffectLayerModifier);
   const beginHistoryTransactionRef = useRef(beginHistoryTransaction);
   const commitHistoryTransactionRef = useRef(commitHistoryTransaction);
@@ -329,6 +339,31 @@ export function AppMenu() {
         stopPropagation: true,
       }
     );
+    // preventDefault matters here: Mod+N would otherwise open a browser window and Mod+O a file picker.
+    const newDocumentHandle = hotkeys.register(
+      "Mod+N",
+      () => {
+        newDocument();
+      },
+      {
+        ignoreInputs: true,
+        meta: { name: "New Document" },
+        preventDefault: true,
+        stopPropagation: true,
+      }
+    );
+    const openDocumentHandle = hotkeys.register(
+      "Mod+O",
+      () => {
+        useWorkspaceStore.getState().emitMenuEvent("file.open");
+      },
+      {
+        ignoreInputs: true,
+        meta: { name: "Open Document" },
+        preventDefault: true,
+        stopPropagation: true,
+      }
+    );
     const toggleVisibilityHandle = hotkeys.register(
       "Mod+H",
       () => {
@@ -394,6 +429,8 @@ export function AppMenu() {
     return () => {
       undoHandle.unregister();
       redoHandle.unregister();
+      newDocumentHandle.unregister();
+      openDocumentHandle.unregister();
       toggleVisibilityHandle.unregister();
       focusLayerHandle.unregister();
       deleteHandle.unregister();
@@ -401,6 +438,25 @@ export function AppMenu() {
       commitKeyboardTransform();
     };
   }, [deleteShortcutKey]);
+
+  async function loadFile(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+
+      if (!isSkyboxDocument(parsed)) {
+        throw new Error("Not a Skybox Studio document.");
+      }
+
+      importDocumentFromFile(parsed, file.name.replace(/\.skybox\.json$|\.json$/i, ""));
+      setLastLoadedFile(file.name);
+      setLoadError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      console.warn("[menu] Load failed:", message);
+      setLoadError(message);
+    }
+  }
 
   function handleMenuCommand(id: MenuCommandId) {
     if (id === "edit.undo") {
@@ -471,6 +527,18 @@ export function AppMenu() {
   function renderFileMenu() {
     return (
       <MenubarContent>
+        <MenubarItem onSelect={() => newDocument()}>
+          <span>New</span>
+          <Shortcut keys={[modifierKeyLabel, "N"]} />
+        </MenubarItem>
+        <MenubarItem onSelect={() => duplicateActiveDocument()}>
+          <span>Make a Copy</span>
+        </MenubarItem>
+        <MenubarItem onSelect={() => handleMenuCommand("file.open")}>
+          <span>Open…</span>
+          <Shortcut keys={[modifierKeyLabel, "O"]} />
+        </MenubarItem>
+        <MenubarSeparator />
         <MenubarSub>
           <MenubarSubTrigger>Export</MenubarSubTrigger>
           <MenubarSubContent>
@@ -486,15 +554,9 @@ export function AppMenu() {
           </MenubarSubContent>
         </MenubarSub>
         <MenubarSeparator />
-        {fileLoadItems.map((menuItem) => (
-          <MenubarItem
-            key={menuItem.id}
-            disabled={menuItem.disabled}
-            onSelect={() => handleMenuCommand(menuItem.id)}
-          >
-            <span>{menuItem.label}</span>
-          </MenubarItem>
-        ))}
+        <MenubarItem onSelect={() => loadInputRef.current?.click()}>
+          <span>Load</span>
+        </MenubarItem>
       </MenubarContent>
     );
   }
@@ -575,33 +637,55 @@ export function AppMenu() {
   }
 
   return (
-    <Menubar
-      aria-label="Application menu"
-      className="h-full rounded-none border-0 bg-background py-1 pr-16 pl-2 shadow-none"
-    >
-      {menuItems.map((item) => (
-        <MenubarMenu key={item.id}>
-          <MenubarTrigger
-            className="leading-none"
-            onPointerDown={() => emitMenuEvent(item.id)}
-          >
-            {item.label}
-          </MenubarTrigger>
-          {item.id === "file"
-            ? renderFileMenu()
-            : item.id === "view"
-              ? renderViewMenu()
-              : item.id === "sky"
-                ? renderSkyMenu()
-                : item.id === "edit"
-                  ? renderCommandMenu(editMenuItems)
-                  : item.id === "layer"
-                    ? renderCommandMenu(layerMenuItems)
-                    : item.items
-                      ? renderCommandMenu(item.items)
-                      : null}
-        </MenubarMenu>
-      ))}
-    </Menubar>
+    <div className="flex h-full min-w-0 items-center justify-self-start">
+      <Menubar
+        aria-label="Application menu"
+        className="h-8 border-0 bg-transparent p-0 shadow-none"
+      >
+        {menuItems.map((item) => (
+          <MenubarMenu key={item.id}>
+            <MenubarTrigger onPointerDown={() => emitMenuEvent(item.id)}>
+              {item.label}
+            </MenubarTrigger>
+            {item.id === "file"
+              ? renderFileMenu()
+              : item.id === "view"
+                ? renderViewMenu()
+                : item.id === "sky"
+                  ? renderSkyMenu()
+                  : item.id === "edit"
+                    ? renderCommandMenu(editMenuItems)
+                    : item.id === "layer"
+                      ? renderCommandMenu(layerMenuItems)
+                      : item.items
+                        ? renderCommandMenu(item.items)
+                        : null}
+          </MenubarMenu>
+        ))}
+      </Menubar>
+
+      <input
+        ref={loadInputRef}
+        accept="application/json,.json"
+        className="hidden"
+        type="file"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+
+          event.currentTarget.value = "";
+
+          if (file) {
+            void loadFile(file);
+          }
+        }}
+      />
+      <div aria-live="polite" className="min-w-0 truncate px-2 text-xs text-muted-foreground">
+        {loadError
+          ? `Load failed: ${loadError}`
+          : lastLoadedFile
+            ? `Loaded ${lastLoadedFile}`
+            : null}
+      </div>
+    </div>
   );
 }

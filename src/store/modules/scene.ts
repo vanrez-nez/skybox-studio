@@ -7,7 +7,7 @@ export type MenuCommandId =
   | "edit.undo"
   | "file.export.image"
   | "file.export.runtime"
-  | "file.load"
+  | "file.open"
   | "layer.delete"
   | "layer.focus"
   | "layer.lock"

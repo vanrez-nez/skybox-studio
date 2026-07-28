@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+// Injected by vite.config.ts `define`. __COMMIT_HASH__ is "dev" outside a build.
+declare const __APP_VERSION__: string;
+declare const __RUNTIME_VERSION__: string;
+declare const __COMMIT_HASH__: string;
+
 declare module "color-blend/unit" {
   export type RGBA = {
     a: number;

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 import { AppMenu } from "@/components/app/menu/AppMenu";
+import { SplashScreen } from "@/components/app/SplashScreen";
 import { useDocumentLibrarySync } from "@/components/app/useDocumentLibrarySync";
+import { splashHidden } from "@/lib/splash-prefs";
 import { Tabs } from "@/components/ui/primitives/tabs";
 import { WorkspaceViewport } from "@/components/scene/WorkspaceViewport";
 import { useWorkspaceStore } from "@/store/app";
@@ -20,6 +22,7 @@ export function AppLayout() {
   const [isImageExportOpen, setIsImageExportOpen] = useState(false);
   const [isRuntimeExportOpen, setIsRuntimeExportOpen] = useState(false);
   const [isOpenDocumentOpen, setIsOpenDocumentOpen] = useState(false);
+  const [splashOpen, setSplashOpen] = useState(() => !splashHidden());
 
   useDocumentLibrarySync();
 
@@ -61,6 +64,8 @@ export function AppLayout() {
       />
       <ImageExportDialog open={isImageExportOpen} onOpenChange={setIsImageExportOpen} />
       <RuntimeExportDialog open={isRuntimeExportOpen} onOpenChange={setIsRuntimeExportOpen} />
+      {/* Last, so it stacks above every dialog — the app boots behind the blurred overlay. */}
+      {splashOpen ? <SplashScreen onDismiss={() => setSplashOpen(false)} /> : null}
     </>
   );
 }

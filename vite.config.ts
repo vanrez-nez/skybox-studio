@@ -1,10 +1,53 @@
 import { execSync } from "node:child_process";
-import { defineConfig } from "vite";
+import { statSync } from "node:fs";
+import { fileURLToPath, URL } from "node:url";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 import appPkg from "./package.json" with { type: "json" };
 import runtimePkg from "./src/runtime/package.json" with { type: "json" };
+
+const SPLASH_ASSET = "assets/splash.webp";
+
+// Emit load-manifest.json — the app's JS/CSS chunks plus the eager splash image, with their UNCOMPRESSED
+// byte sizes. The splash preloader (src/lib/preload.ts) streams these to drive a real 0–100% bar;
+// uncompressed sizes make decompressed stream bytes match the total even when the host gzips.
+//
+// The texture-baking worker is deliberately excluded: it's only instantiated when the user opens an
+// image export (BakePreview), so counting its ~500 kB would make the boot bar wait on bytes nothing
+// needs. Non-CSS bundler assets (sourcemaps included) are skipped the same way.
+function loadManifestPlugin(): Plugin {
+  return {
+    name: "load-manifest",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const entries: { url: string; bytes: number }[] = [];
+      for (const [fileName, output] of Object.entries(bundle)) {
+        if (output.type === "chunk") {
+          if (fileName.includes("texture-baking.worker")) {
+            continue;
+          }
+          entries.push({ url: fileName, bytes: Buffer.byteLength(output.code) });
+        } else if (fileName.endsWith(".css")) {
+          const source = output.source;
+          entries.push({
+            url: fileName,
+            bytes: typeof source === "string" ? Buffer.byteLength(source) : source.byteLength,
+          });
+        }
+      }
+      // Lives in public/, so it never enters the Rollup graph — measure it off disk.
+      const splashPath = fileURLToPath(new URL(`./public/${SPLASH_ASSET}`, import.meta.url));
+      entries.push({ url: SPLASH_ASSET, bytes: statSync(splashPath).size });
+      this.emitFile({
+        type: "asset",
+        fileName: "load-manifest.json",
+        source: JSON.stringify(entries),
+      });
+    },
+  };
+}
 
 // Short hash of the HEAD commit, baked into a BUILD so the status bar can identify the exact released
 // code. Appends "-dirty" when the tree has uncommitted changes so the marker never claims a clean commit
@@ -30,7 +73,7 @@ export default defineConfig(({ command }) => ({
     // Only a real build gets a commit hash (representative of the released code); dev shows "dev".
     __COMMIT_HASH__: JSON.stringify(command === "build" ? gitCommitHash() : "dev"),
   },
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), loadManifestPlugin()],
   resolve: {
     alias: {
       // More specific alias first: the editor imports the runtime's source directly

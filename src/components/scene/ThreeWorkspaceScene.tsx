@@ -1244,6 +1244,8 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       liveSkybox.setEditorPresentationEnabled(true);
       syncSkybox();
       resize();
+      // Surface the local readiness flag so the splash knows the app is actually usable.
+      useWorkspaceStore.getState().setRendererReady(true);
     });
 
     return () => {

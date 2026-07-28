@@ -40,6 +40,9 @@ export type SceneSlice = {
   showGroundPlaneHelper: boolean;
   showOrientationGizmo: boolean;
   showSkyGeometry: boolean;
+  // Flipped once the WebGPU renderer finishes async init. Never persisted — it must start false on
+  // every load. The splash screen reveals its launcher panel off this.
+  rendererReady: boolean;
   emitLayerFocusRequest: (layerId: string) => void;
   emitMenuEvent: (id: MenuEventId) => void;
   setActiveView: (view: WorkspaceView) => void;
@@ -50,6 +53,7 @@ export type SceneSlice = {
   setShowGroundPlaneHelper: (visible: boolean) => void;
   setShowOrientationGizmo: (visible: boolean) => void;
   setShowSkyGeometry: (visible: boolean) => void;
+  setRendererReady: (ready: boolean) => void;
 };
 
 export const workspaceViews: Array<{ id: WorkspaceView; label: string }> = [
@@ -73,6 +77,7 @@ export const createSceneSlice: StateCreator<
   showGroundPlaneHelper: false,
   showOrientationGizmo: true,
   showSkyGeometry: false,
+  rendererReady: false,
   emitLayerFocusRequest: (layerId) =>
     set({ lastLayerFocusRequest: { issuedAt: Date.now(), layerId } }),
   emitMenuEvent: (id) => set({ lastMenuEvent: { id, issuedAt: Date.now() } }),
@@ -84,4 +89,5 @@ export const createSceneSlice: StateCreator<
   setShowGroundPlaneHelper: (visible) => set({ showGroundPlaneHelper: visible }),
   setShowOrientationGizmo: (visible) => set({ showOrientationGizmo: visible }),
   setShowSkyGeometry: (visible) => set({ showSkyGeometry: visible }),
+  setRendererReady: (ready) => set({ rendererReady: ready }),
 });

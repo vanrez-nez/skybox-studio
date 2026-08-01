@@ -546,7 +546,7 @@ export function LayersWidget() {
                       onSelect={() =>
                         addEffectLayer(
                           addon.type,
-                          addon.type === "spot"
+                          addon.type === "spot" || addon.type === "moon"
                             ? { centerDirection: useWorkspaceStore.getState().sceneLookDirection }
                             : undefined
                         )

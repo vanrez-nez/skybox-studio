@@ -505,6 +505,7 @@ export function BakePreview() {
         }
 
         const starfieldTextures = bakeStarfieldTextures(gpu.starfieldService, manifest, exportWidth);
+        const moonTextures = await gpu.skyboxService.prepareMoonTextures(manifest, exportHeight);
         const imageTextures = await loadSkyboxImageTextures(manifest);
 
         setIsSaving(true);
@@ -525,6 +526,7 @@ export function BakePreview() {
                   hdr: true,
                   height: exportHeight,
                   imageTextures,
+                  moonTextures,
                   starfieldTextures,
                   width: exportWidth,
                 }),

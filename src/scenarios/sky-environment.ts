@@ -53,6 +53,7 @@ export class SkyEnvironment {
   #prefiltered: THREE.Texture | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #disposed = false;
+  #generation = 0;
   #onChange: (environment: THREE.Texture | null) => void;
 
   constructor(
@@ -79,13 +80,19 @@ export class SkyEnvironment {
       clearTimeout(this.#timer);
     }
 
+    const generation = ++this.#generation;
+
     this.#timer = setTimeout(() => {
       this.#timer = null;
-      this.#bake(manifest, imageTextures);
+      void this.#bake(manifest, imageTextures, generation);
     }, REBAKE_DEBOUNCE_MS);
   }
 
-  #bake(manifest: SkyboxManifest, imageTextures?: Map<string, THREE.Texture>): void {
+  async #bake(
+    manifest: SkyboxManifest,
+    imageTextures: Map<string, THREE.Texture> | undefined,
+    generation: number,
+  ): Promise<void> {
     if (this.#disposed || !this.#skyboxService) {
       return;
     }
@@ -109,11 +116,18 @@ export class SkyEnvironment {
         });
       }
 
+      const moonTextures = await this.#skyboxService.prepareMoonTextures(manifest, ENV_HEIGHT);
+
+      if (this.#disposed || generation !== this.#generation) {
+        return;
+      }
+
       const baked = this.#skyboxService.bakeRenderTarget(manifest, {
         height: ENV_HEIGHT,
         // Linear half-float so the PMREM has real range to work with.
         hdr: true,
         imageTextures,
+        moonTextures,
         starfieldTextures,
         width: ENV_WIDTH,
         // No flipY: that option exists only to cancel the EXR exporter's scanline flip, and would
@@ -144,6 +158,7 @@ export class SkyEnvironment {
 
   dispose(): void {
     this.#disposed = true;
+    this.#generation += 1;
 
     if (this.#timer !== null) {
       clearTimeout(this.#timer);

@@ -12,10 +12,15 @@ import { RotationGizmo } from "./RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
 import { getEffectLayerFocusTarget, type EffectLayer } from "@/effects/effect-layer";
 import type { ImageState } from "@/effects/layers/image/state";
+import {
+  MOON_PLACEMENT_TRANSACTION_SCOPE,
+  type MoonState,
+} from "@/effects/layers/moon/state";
 import type { CloudsState } from "@/effects/layers/clouds/state";
 import type { SpotState } from "@/effects/layers/spot/state";
 import type { StarfieldState } from "@/effects/layers/starfield/state";
 import * as imageOps from "@/effects/layers/image/operations";
+import * as moonOps from "@/effects/layers/moon/operations";
 import * as spotOps from "@/effects/layers/spot/operations";
 import { EditorSkyboxSync } from "./EditorSkyboxSync";
 import {
@@ -343,6 +348,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       offsetY: 0,
       pointerId: -1,
     };
+    const moonDragState = {
+      angularRadius: 0,
+      hasMoved: false,
+      layerId: "",
+      offsetX: 0,
+      offsetY: 0,
+      pointerId: -1,
+    };
     let hoveredEditorLayerId: string | null = null;
     let selectedEditorLayerId: string | null = null;
     const cameraRotation = INITIAL_CAMERA_ROTATION.clone();
@@ -410,6 +423,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     renderRef.current = render;
     liveSkybox.addEventListener("starfieldtexturechange" as never, render);
+    liveSkybox.addEventListener("moontexturechange" as never, render);
     setSkyGeometryVisibleRef.current = (visible) => {
       skyGeometry.visible = visible;
       render();
@@ -516,7 +530,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         camera.fov = params.fov;
         camera.updateProjectionMatrix();
         // Star glints are sized from the vertical FOV — same contract resize() honours.
-        liveSkybox.setStarGlintViewport({
+        liveSkybox.setViewport({
           renderHeight: Math.max(1, Math.round(container.getBoundingClientRect().height)),
           verticalFovRadians: THREE.MathUtils.degToRad(camera.fov),
         });
@@ -611,7 +625,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const getEditorLayerId = (layers: EffectLayer[], layerId: string) => {
       const layer = layers.find((effectLayer) => effectLayer.id === layerId);
 
-      return layer && (layer.type === "image" || layer.type === "spot") && layer.enabled
+      return layer &&
+        (layer.type === "image" || layer.type === "moon" || layer.type === "spot") &&
+        layer.enabled
         ? layer.id
         : null;
     };
@@ -1096,6 +1112,18 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           continue;
         }
 
+        if (layer.type === "moon") {
+          const uv = projectDirectionToImageUv(
+            direction,
+            (layer.params as MoonState).placement,
+          );
+
+          if (uv) {
+            hits.push({ layerId: layer.id, type: layer.type, uv });
+          }
+          continue;
+        }
+
         if (layer.type !== "image") {
           hits.push({ layerId: layer.id, type: layer.type });
           continue;
@@ -1119,7 +1147,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     const updateHoveredEditorLayerFromPointer = (event: PointerEvent) => {
       const editorHit = getSceneLayerHits(event).find(
-        (hit) => hit.type === "image" || hit.type === "spot"
+        (hit) => hit.type === "image" || hit.type === "moon" || hit.type === "spot"
       );
 
       setHoveredEditorLayerId(editorHit?.layerId ?? null);
@@ -1230,6 +1258,28 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       syncSkybox();
     };
 
+    const updateMoonDragPosition = (event: PointerEvent) => {
+      if (moonDragState.pointerId !== event.pointerId || !moonDragState.layerId) {
+        return;
+      }
+
+      setRaycasterFromPointer(event);
+      const pointerDirection = vectorToTuple(raycaster.ray.direction.clone().normalize());
+      const centerDirection = getDraggedCenterDirection(
+        pointerDirection,
+        moonDragState.angularRadius,
+        moonDragState.offsetX,
+        moonDragState.offsetY,
+      );
+
+      updateLayerParams(
+        moonDragState.layerId,
+        (params) => moonOps.setMoonCenterDirection(params as MoonState, centerDirection),
+        { history: "skip" },
+      );
+      syncSkybox();
+    };
+
     lookAtAxisDirectionRef.current = lookAtAxisDirection;
     focusLayerRef.current = focusLayer;
     resetOrientationRef.current = resetOrientation;
@@ -1287,10 +1337,37 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
     };
 
+    const releaseMoonPointer = (event: PointerEvent) => {
+      if (moonDragState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      if (moonDragState.hasMoved) {
+        updateMoonDragPosition(event);
+      }
+
+      moonDragState.layerId = "";
+      moonDragState.pointerId = -1;
+      moonDragState.angularRadius = 0;
+      moonDragState.offsetX = 0;
+      moonDragState.offsetY = 0;
+      moonDragState.hasMoved = false;
+      commitHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE);
+      canvas.style.cursor = "grab";
+
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+    };
+
     const selectSceneLayerHit = (hit: SceneLayerHit) => {
       selectedLayerIdRef.current = hit.layerId;
       selectEffectLayer(hit.layerId);
-      setSelectedEditorLayerId(hit.type === "image" || hit.type === "spot" ? hit.layerId : null);
+      setSelectedEditorLayerId(
+        hit.type === "image" || hit.type === "moon" || hit.type === "spot"
+          ? hit.layerId
+          : null,
+      );
     };
 
     const beginImageDrag = (event: PointerEvent, hit: SceneLayerHit) => {
@@ -1367,6 +1444,44 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       return true;
     };
 
+    const beginMoonDrag = (event: PointerEvent, hit: SceneLayerHit) => {
+      if (hit.type !== "moon") {
+        return false;
+      }
+
+      const hitLayer = effectLayersRef.current.find(
+        (layer): layer is EffectLayer<MoonState> =>
+          layer.id === hit.layerId && layer.type === "moon",
+      );
+
+      if (!hitLayer) {
+        return false;
+      }
+
+      const angularRadius = hitLayer.params.placement.angularWidth / 2;
+      setRaycasterFromPointer(event);
+      const pointerDirection = vectorToTuple(raycaster.ray.direction.clone().normalize());
+      const offset = getProjectedOffset(
+        pointerDirection,
+        hitLayer.params.placement.centerDirection,
+        angularRadius,
+      );
+
+      selectSceneLayerHit(hit);
+      setHoveredEditorLayerId(hit.layerId);
+      beginHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE);
+      moonDragState.layerId = hit.layerId;
+      moonDragState.pointerId = event.pointerId;
+      moonDragState.angularRadius = angularRadius;
+      moonDragState.offsetX = offset.x;
+      moonDragState.offsetY = offset.y;
+      moonDragState.hasMoved = false;
+      canvas.style.cursor = "grabbing";
+      canvas.setPointerCapture(event.pointerId);
+
+      return true;
+    };
+
     const onPointerDown = (event: PointerEvent) => {
       // Layer picking and dragging are editing affordances — Preview is look-only.
       if (event.button !== 0 || previewActive) {
@@ -1380,7 +1495,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      const hoveredEditorHit = hits.find((hit) => hit.type === "image" || hit.type === "spot");
+      const hoveredEditorHit = hits.find(
+        (hit) => hit.type === "image" || hit.type === "moon" || hit.type === "spot",
+      );
       setHoveredEditorLayerId(hoveredEditorHit?.layerId ?? null);
 
       const selectedImageHit = hits.find(
@@ -1399,6 +1516,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
+      const selectedMoonHit = hits.find(
+        (hit) => hit.type === "moon" && hit.layerId === selectedLayerIdRef.current,
+      );
+
+      if (selectedMoonHit && beginMoonDrag(event, selectedMoonHit)) {
+        return;
+      }
+
       const topHit = hits[0];
 
       if (topHit.type === "image" && beginImageDrag(event, topHit)) {
@@ -1406,6 +1531,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       if (topHit.type === "spot" && beginSpotDrag(event, topHit)) {
+        return;
+      }
+
+      if (topHit.type === "moon" && beginMoonDrag(event, topHit)) {
         return;
       }
 
@@ -1458,6 +1587,14 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
+      if (moonDragState.pointerId === event.pointerId) {
+        event.preventDefault();
+        moonDragState.hasMoved = true;
+        updateMoonDragPosition(event);
+        setHoveredEditorLayerId(moonDragState.layerId);
+        return;
+      }
+
       if (!orbitControls.isDragging) {
         updateHoveredEditorLayerFromPointer(event);
         canvas.style.cursor = "grab";
@@ -1475,6 +1612,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     const releaseScenePointer = (event: PointerEvent) => {
       releaseImagePointer(event);
       releaseSpotPointer(event);
+      releaseMoonPointer(event);
     };
 
     canvas.addEventListener("pointerup", releaseScenePointer);
@@ -1491,7 +1629,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       renderer.setSize(nextWidth, nextHeight, false);
       // Size starfield stars to a fixed logical-pixel size for THIS viewport (vertical FOV +
       // logical height) so they look identical here and in any consumer/export at the same FOV.
-      liveSkybox.setStarGlintViewport({
+      liveSkybox.setViewport({
         renderHeight: nextHeight,
         verticalFovRadians: THREE.MathUtils.degToRad(camera.fov),
       });
@@ -1561,6 +1699,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       canvas.removeEventListener("pointercancel", releaseScenePointer);
       canvas.removeEventListener("lostpointercapture", releaseScenePointer);
       liveSkybox.removeEventListener("starfieldtexturechange" as never, render);
+      liveSkybox.removeEventListener("moontexturechange" as never, render);
       resizeObserver.disconnect();
       imageTextureRecords.forEach((record) => record.texture.dispose());
       imageTextureRecords.clear();

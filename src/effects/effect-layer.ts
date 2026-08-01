@@ -25,6 +25,16 @@ import {
   type ImageState,
 } from "@/effects/layers/image/state";
 import {
+  cloneMoonState,
+  createDefaultMoonState,
+  loadMoonState,
+  type MoonState,
+} from "@/effects/layers/moon/state";
+import {
+  positionFromMoon,
+  setMoonPosition,
+} from "@/effects/layers/moon/operations";
+import {
   cloneSpotState,
   createDefaultSpotState,
   type SpotState,
@@ -82,6 +92,11 @@ export type SerializedImageEffect = {
   type: "image";
 };
 
+export type SerializedMoonEffect = {
+  params: MoonState;
+  type: "moon";
+};
+
 export type SerializedSpotEffect = {
   params: SpotState;
   type: "spot";
@@ -99,6 +114,7 @@ export type SerializedEffectLayer = {
     | SerializedGradientEffect
     | SerializedFieldGradientEffect
     | SerializedImageEffect
+    | SerializedMoonEffect
     | SerializedSpotEffect
     | SerializedStarfieldEffect;
   enabled: boolean;
@@ -459,6 +475,63 @@ export const imageLayerAddon: EffectLayerAddon<"image", ImageState> = {
   type: "image",
 };
 
+export const moonLayerAddon: EffectLayerAddon<"moon", MoonState> = {
+  cloneParams: cloneMoonState,
+  createDefaultParams: (context) => createDefaultMoonState(context?.centerDirection),
+  defaultBlendMode: "normal",
+  displayName: "Moon",
+  getDefaultName: () => "Moon",
+  getFocusTarget: (layer) => {
+    if (!layer.enabled) return null;
+    const direction = layer.params.placement.centerDirection;
+    return isFiniteDirection(direction) ? { direction, type: "direction" } : null;
+  },
+  load: (serialized) => loadMoonState(serialized.params),
+  serialize: (params) => ({ params: cloneMoonState(params), type: "moon" }),
+  toManifestParams: cloneMoonState,
+  runtime: {
+    getTopologyKey: (layer) => ({
+      enabled: layer.enabled,
+      id: layer.id,
+      type: layer.type,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateMoonLayer(layer.id, manifestLayer.params);
+    },
+  },
+  transformCapabilities: {
+    "2d-position": {
+      read: (layer) =>
+        layer.type === "moon" ? positionFromMoon(layer.params) : null,
+      write: (layer, value) =>
+        layer.type === "moon"
+          ? {
+              ...layer,
+              params: setMoonPosition(layer.params, value),
+            }
+          : null,
+    },
+    scale: {
+      read: (layer) =>
+        layer.type === "moon" ? scaleFromPlacement(layer.params.placement) : null,
+      write: (layer, value) =>
+        layer.type === "moon"
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                placement: placementFromScale(layer.params.placement, {
+                  x: value.x,
+                  y: value.x,
+                }),
+              },
+            }
+          : null,
+    },
+  },
+  type: "moon",
+};
+
 export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
   cloneParams: cloneSpotState,
   createDefaultParams: (context) => createDefaultSpotState(context?.centerDirection),
@@ -540,6 +613,7 @@ export const builtInEffectLayerAddons = [
   cloudsLayerAddon,
   fieldGradientLayerAddon,
   spotLayerAddon,
+  moonLayerAddon,
   imageLayerAddon,
   starfieldLayerAddon,
 ] as const;

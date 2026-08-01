@@ -12,6 +12,7 @@ import { RotationGizmo } from "./RotationGizmo";
 import { createSkyboxManifest } from "@/effects/skybox-manifest";
 import { getEffectLayerFocusTarget, type EffectLayer } from "@/effects/effect-layer";
 import type { ImageState } from "@/effects/layers/image/state";
+import type { CloudsState } from "@/effects/layers/clouds/state";
 import type { SpotState } from "@/effects/layers/spot/state";
 import type { StarfieldState } from "@/effects/layers/starfield/state";
 import * as imageOps from "@/effects/layers/image/operations";
@@ -167,10 +168,6 @@ const EDITOR_CAMERA_FAR = 100;
 // The skybox never depth-tests, so a far plane this large costs nothing there — it exists so a
 // full-size scenario heightfield fits inside the frustum.
 const PREVIEW_CAMERA_FAR = 4000;
-// Mesh name the runtime gives its live star-glint children (createStarfieldGlints).
-const STARFIELD_GLINT_NAME = "Starfield glints";
-// Between the sky composite (-1) and scenario geometry (0).
-const STARFIELD_GLINT_RENDER_ORDER = -0.5;
 
 export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -385,37 +382,6 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         material.fog = false;
         material.needsUpdate = true;
       }
-
-      applyStarGlintRenderOrder();
-    };
-
-    // Starfield glints are screen-space quads the runtime adds as children of the skybox. They are
-    // additive + depthTest:false and ship as `transparent`, which puts them in the transparent queue
-    // — drawn after ALL opaque geometry, so a scenario's terrain could never occlude them and stars
-    // showed through the ground.
-    //
-    // Moving them into the opaque queue, ordered between the sky composite (-1) and scenario
-    // geometry (0), makes the terrain paint over them. Additive blending is order-independent and
-    // they still don't write depth, so nothing else about their appearance changes — in the Editor,
-    // where there is no scene geometry, the result is pixel-identical.
-    //
-    // Done here rather than in the runtime: the glint meshes are rebuilt whenever starfield params
-    // change, and the depth-based alternative needs a shader change in the submodule.
-    const applyStarGlintRenderOrder = () => {
-      liveSkybox.children.forEach((child) => {
-        if (child.name !== STARFIELD_GLINT_NAME) {
-          return;
-        }
-
-        const glintMaterial = (child as THREE.Mesh).material as THREE.Material | undefined;
-
-        if (glintMaterial?.transparent) {
-          glintMaterial.transparent = false;
-          glintMaterial.needsUpdate = true;
-        }
-
-        child.renderOrder = STARFIELD_GLINT_RENDER_ORDER;
-      });
     };
 
     applySkyboxRenderFlags();
@@ -474,13 +440,24 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     let currentSceneParams: SceneParams | null = null;
     let animationHandle: number | null = null;
     let lastFrameTime = 0;
+    let cloudTimeSeconds = 0;
     const skyEnvironment = new SkyEnvironment(renderer, (environment) => {
       sceneEnvironment.setEnvironment(environment);
       render();
     });
 
-    // Only runs while a scenario declares animate(); terrain doesn't, so the viewport stays
-    // on-demand exactly as it is today.
+    const hasDynamicClouds = () =>
+      effectLayersRef.current.some(
+        (layer) =>
+          layer.enabled &&
+          layer.type === "clouds" &&
+          (layer.params as CloudsState).motionMode === "dynamic"
+      );
+    const hasScenarioAnimation = () => previewActive && Boolean(scenarioInstance?.animate);
+    const shouldAnimate = () => hasDynamicClouds() || hasScenarioAnimation();
+
+    // One host-owned scheduler serves preview scenarios and Dynamic Clouds. Static skies and
+    // scenarios without animate() remain fully on-demand.
     const stopAnimation = () => {
       if (animationHandle !== null) {
         window.cancelAnimationFrame(animationHandle);
@@ -488,7 +465,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
     };
     const tick = (time: number) => {
-      if (disposed || !scenarioInstance?.animate) {
+      if (disposed || !shouldAnimate()) {
         animationHandle = null;
         return;
       }
@@ -496,12 +473,20 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       const delta = lastFrameTime === 0 ? 0 : (time - lastFrameTime) / 1000;
 
       lastFrameTime = time;
-      scenarioInstance.animate(delta);
+      if (hasDynamicClouds()) {
+        cloudTimeSeconds += delta;
+        // The Studio is the runtime host: it supplies deterministic time explicitly. setTime is a
+        // uniform-only update and never rebuilds the material, field texture, or environment map.
+        liveSkybox.setTime(cloudTimeSeconds);
+      }
+      if (hasScenarioAnimation()) {
+        scenarioInstance?.animate?.(delta);
+      }
       render();
       animationHandle = window.requestAnimationFrame(tick);
     };
     const syncAnimation = () => {
-      if (previewActive && scenarioInstance?.animate) {
+      if (!disposed && rendererReady && shouldAnimate()) {
         if (animationHandle === null) {
           lastFrameTime = 0;
           animationHandle = window.requestAnimationFrame(tick);
@@ -539,13 +524,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     const teardownScenario = () => {
-      stopAnimation();
-
       if (scenarioInstance) {
         scenarioRoot.remove(scenarioInstance.root);
         scenarioInstance.dispose();
         scenarioInstance = null;
       }
+
+      syncAnimation();
     };
 
     const buildScenario = (id: string, params: unknown) => {
@@ -892,6 +877,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         previewBlendMode: state.previewEffectLayerBlendMode,
         skyGeometryType: state.skyGeometryType,
       });
+      syncAnimation();
       // The scenario is lit by the sky, so an edit to the sky has to re-bake the env map (and, when
       // the sun is linked, move the sun). Debounced inside SkyEnvironment.
       if (previewActive) {

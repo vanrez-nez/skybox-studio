@@ -43,7 +43,7 @@ export function setMoonBoolean(
 
 export function setMoonColor(
   params: MoonState,
-  key: "baseColor" | "glowColor" | "mareColor" | "nightColor" | "rimColor",
+  key: "baseColor" | "mareColor" | "nightColor",
   value: string,
 ): MoonState {
   return params[key] === value ? params : { ...params, [key]: value };

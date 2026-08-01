@@ -46,31 +46,20 @@ const SURFACE_CONTROLS: NumberControl[] = [
   { key: "craterFreq", label: "Crater scale", min: 1.5, max: 18, step: 0.1 },
   { key: "craterDepth", label: "Crater depth", min: 0.001, max: 0.05, step: 0.0005 },
   { key: "maria", label: "Maria", min: 0, max: 1, step: 0.01 },
-  { key: "mariaDarkness", label: "Maria darkness", min: 0.15, max: 1, step: 0.01 },
   { key: "mariaDepth", label: "Maria depth", min: 0, max: 0.02, step: 0.0005 },
   { key: "regolith", label: "Regolith", min: 0, max: 2, step: 0.01 },
   { key: "rays", label: "Ray systems", min: 0, max: 3, step: 0.01 },
 ];
 
-const SHADING_CONTROLS: NumberControl[] = [
-  { key: "albedo", label: "Albedo", min: 0.02, max: 1, step: 0.005 },
-  { key: "bumpStrength", label: "Bump", min: 0, max: 4, step: 0.01 },
-  { key: "ao", label: "Ambient occlusion", min: 0, max: 1.5, step: 0.01 },
-  { key: "shadowStrength", label: "Shadows", min: 0, max: 1, step: 0.01 },
-  { key: "shadowReach", label: "Shadow reach", min: 0.005, max: 0.15, step: 0.001 },
-  { key: "backscatter", label: "Backscatter", min: 0, max: 1, step: 0.01 },
-  { key: "earthshine", label: "Earthshine", min: 0, max: 0.4, step: 0.005 },
-  { key: "exposure", label: "Exposure", min: 0.2, max: 8, step: 0.01 },
+const REALISTIC_LIGHT_CONTROLS: NumberControl[] = [
+  { key: "exposure", label: "Exposure", min: 0.1, max: 8, step: 0.01 },
 ];
 
-const LIGHT_CONTROLS: NumberControl[] = [
-  { key: "lightIntensity", label: "Intensity", min: 0, max: 5, step: 0.01 },
-  { key: "ambient", label: "Ambient", min: 0, max: 0.6, step: 0.005 },
-  { key: "rimStrength", label: "Rim", min: 0, max: 4, step: 0.01 },
-  { key: "rimPower", label: "Rim falloff", min: 0.5, max: 10, step: 0.05 },
-  { key: "glowStrength", label: "Glow", min: 0, max: 4, step: 0.01 },
-  { key: "glowWidth", label: "Glow reach", min: 0.02, max: 1, step: 0.005 },
-  { key: "glowWrap", label: "Glow wrap", min: 0, max: 1, step: 0.01 },
+const CARTOON_LIGHT_CONTROLS: NumberControl[] = [
+  { key: "cartoonLightIntensity", label: "Intensity", min: 0, max: 5, step: 0.01 },
+  { key: "cartoonFill", label: "Fill", min: 0, max: 0.6, step: 0.005 },
+  { key: "cartoonNightStrength", label: "Night strength", min: 0, max: 2.4, step: 0.01 },
+  { key: "exposure", label: "Exposure", min: 0.1, max: 4, step: 0.01 },
 ];
 
 const CARTOON_CONTROLS: NumberControl[] = [
@@ -88,8 +77,6 @@ const CARTOON_CONTROLS: NumberControl[] = [
 
 const CARTOON_SHARED_CONTROLS: NumberControl[] = [
   { key: "maria", label: "Maria", min: 0, max: 1, step: 0.01 },
-  { key: "earthshine", label: "Earthshine", min: 0, max: 0.4, step: 0.005 },
-  { key: "exposure", label: "Exposure", min: 0.2, max: 4, step: 0.01 },
 ];
 
 function formatNumber(value: number, step: number) {
@@ -327,10 +314,13 @@ export function MoonWidget() {
         ) : null}
 
         <TabsContent className="grid gap-3" value="light">
-          {!isCartoon ? renderControls(SHADING_CONTROLS) : null}
-          {renderControls(LIGHT_CONTROLS)}
-          <ColorRow label="Rim color" value={moon.rimColor} onChange={(value) => update((params) => moonOps.setMoonColor(params, "rimColor", value))} />
-          <ColorRow label="Glow color" value={moon.glowColor} onChange={(value) => update((params) => moonOps.setMoonColor(params, "glowColor", value))} />
+          {!isCartoon ? (
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>Model</span>
+              <span className="text-foreground">Hapke · LRO/WAC 643 nm</span>
+            </div>
+          ) : null}
+          {renderControls(isCartoon ? CARTOON_LIGHT_CONTROLS : REALISTIC_LIGHT_CONTROLS)}
         </TabsContent>
 
         {isCartoon ? (

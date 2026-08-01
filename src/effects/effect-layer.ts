@@ -45,14 +45,15 @@ import {
   starfieldStateToManifestParams,
   type StarfieldState,
 } from "@/effects/layers/starfield/state";
-import type {
-  SkyboxFieldGradientParams,
-  SkyboxGradientParams,
-  SkyboxImageParams,
-  SkyboxManifestLayer,
-  Skybox,
-  SkyboxSpotParams,
-  SkyboxStarfieldParams,
+import {
+  computeMoonLightSource,
+  type SkyboxFieldGradientParams,
+  type SkyboxGradientParams,
+  type SkyboxImageParams,
+  type SkyboxManifestLayer,
+  type Skybox,
+  type SkyboxSpotParams,
+  type SkyboxStarfieldParams,
 } from "@/runtime/index";
 import {
   normalizeImagePlacement,
@@ -140,6 +141,22 @@ export type EffectLayerFocusTarget = {
   type: "direction";
 };
 
+/**
+ * Editor-side view of a layer's light-source capability (the runtime twin is
+ * LayerLightSourceDescriptor). Addons that implement getLightSource can be
+ * picked as a Clouds light reference; descriptor defaults are filled in so
+ * consumers never branch on undefined.
+ */
+export type EffectLayerLightSource = {
+  direction: [number, number, number];
+  /** Multiplier over the clouds light's user intensity; 1 = passthrough. */
+  intensityScale: number;
+  /** Apparent angular radius in radians; 0 = point light. */
+  angularRadius: number;
+  /** True when the layer draws its own disc (clouds disc is forced off). */
+  rendersOwnDisc: boolean;
+};
+
 export type Point3 = {
   x: number;
   y: number;
@@ -189,6 +206,13 @@ export type EffectLayerAddon<TType extends string = string, TParams = unknown> =
   displayName: string;
   getDefaultName: (index: number) => string;
   getFocusTarget?: (layer: EffectLayer<TParams>) => EffectLayerFocusTarget | null;
+  /**
+   * Light-source capability: presence makes this layer type selectable as a
+   * Clouds light reference. Null = this particular layer can't provide a
+   * light right now (e.g. an unplaced image). Mirrors the runtime adapter's
+   * getLightSource so the widget/store never branch on layer type.
+   */
+  getLightSource?: (layer: EffectLayer<TParams>) => EffectLayerLightSource | null;
   load: (serialized: { params: TParams; type: TType }) => TParams;
   serialize: (params: TParams) => { params: TParams; type: TType };
   // Drop editor-only runtime data (decoded pixels, object URLs) that must never reach storage. Addons
@@ -402,6 +426,18 @@ export const imageLayerAddon: EffectLayerAddon<"image", ImageState> = {
     };
   },
   getDefaultName: () => "Image",
+  // Direction-only light source; an unplaced image is not a light source.
+  getLightSource: (layer) => {
+    const direction = layer.params.placement?.centerDirection;
+    return direction && isFiniteDirection(direction)
+      ? {
+          direction: [...direction],
+          intensityScale: 1,
+          angularRadius: 0,
+          rendersOwnDisc: false,
+        }
+      : null;
+  },
   load: (serialized) => cloneImageState(serialized.params),
   serialize: (params) => ({ params: cloneImageState(params), type: "image" }),
   // Decoded pixels and the object URL are rebuilt from the IndexedDB blob keyed by assetId
@@ -486,6 +522,18 @@ export const moonLayerAddon: EffectLayerAddon<"moon", MoonState> = {
     const direction = layer.params.placement.centerDirection;
     return isFiniteDirection(direction) ? { direction, type: "direction" } : null;
   },
+  // Full descriptor: the runtime helper derives the intensity modulation from
+  // phase/size/exposure and the disc's angular radius. Editor MoonState IS
+  // SkyboxMoonParams, so this is a direct delegation — one photometric truth.
+  getLightSource: (layer) => {
+    const source = computeMoonLightSource(layer.params);
+    return {
+      direction: source.direction,
+      intensityScale: source.intensityScale ?? 1,
+      angularRadius: source.angularRadius ?? 0,
+      rendersOwnDisc: source.rendersOwnDisc ?? false,
+    };
+  },
   load: (serialized) => loadMoonState(serialized.params),
   serialize: (params) => ({ params: cloneMoonState(params), type: "moon" }),
   toManifestParams: cloneMoonState,
@@ -554,6 +602,16 @@ export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
     };
   },
   getDefaultName: () => "Spot",
+  // Direction-only light source: appearance never leaks into the sky model.
+  getLightSource: (layer) =>
+    isFiniteDirection(layer.params.centerDirection)
+      ? {
+          direction: [...layer.params.centerDirection],
+          intensityScale: 1,
+          angularRadius: 0,
+          rendersOwnDisc: false,
+        }
+      : null,
   load: (serialized) => cloneSpotState(serialized.params),
   serialize: (params) => ({ params: cloneSpotState(params), type: "spot" }),
   toManifestParams: manifestSpotParams,

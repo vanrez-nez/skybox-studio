@@ -135,11 +135,18 @@ export function setLightReference(
   params: CloudsState,
   light: CloudLightName,
   directionLayerId: string | null,
-  resolvedDirection?: VectorTuple,
+  baked?: { direction?: VectorTuple; disc?: boolean; intensity?: number },
 ): CloudsState {
+  // On unlink the widget bakes the source's effective look (direction,
+  // trimmed intensity, disc) into the stored params so the frame before and
+  // after switching to Manual is identical.
   return updateLight(params, light, {
     directionLayerId,
-    ...(resolvedDirection ? { direction: resolvedDirection } : {}),
+    ...(baked?.direction ? { direction: baked.direction } : {}),
+    ...(baked?.intensity !== undefined
+      ? { intensity: clamp(baked.intensity, 0, 100) }
+      : {}),
+    ...(baked?.disc !== undefined ? { disc: baked.disc } : {}),
   });
 }
 

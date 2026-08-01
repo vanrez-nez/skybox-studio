@@ -127,17 +127,16 @@ export type LayersSlice = {
 
 const initialEffectLayers: EffectLayer[] = [];
 
-function removeLayerAndDetachCloudLights(
+export function removeLayerAndDetachCloudLights(
   layers: EffectLayer[],
   layerId: string,
 ): EffectLayer[] {
   const target = layers.find((layer) => layer.id === layerId);
-  const direction =
-    target?.type === "spot"
-      ? ([...(target.params as SpotState).centerDirection] as [number, number, number])
-      : target?.type === "image"
-        ? ((target.params as ImageState).placement?.centerDirection ?? null)
-        : null;
+  // Bake the deleted source's effective look through the addon's light-source
+  // capability (type-agnostic), so a lit scene keeps its look on delete.
+  const source = target
+    ? getEffectLayerAddon(target.type).getLightSource?.(target) ?? null
+    : null;
 
   return layers
     .filter((layer) => layer.id !== layerId)
@@ -156,8 +155,12 @@ function removeLayerAndDetachCloudLights(
         changed = true;
         return {
           ...light,
-          direction: direction ? [...direction] : light.direction,
+          direction: source ? [...source.direction] : light.direction,
           directionLayerId: null,
+          intensity: source
+            ? Math.min(Math.max(light.intensity * source.intensityScale, 0), 100)
+            : light.intensity,
+          disc: source?.rendersOwnDisc ? false : light.disc,
         };
       };
       const sun = detach(params.sun);

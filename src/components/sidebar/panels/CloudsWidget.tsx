@@ -29,8 +29,11 @@ import {
   type CloudsRootNumericKey,
   type CloudsState,
 } from "@/effects/layers/clouds/state";
-import type { ImageState } from "@/effects/layers/image/state";
-import type { SpotState } from "@/effects/layers/spot/state";
+import {
+  getEffectLayerAddon,
+  type EffectLayer,
+  type EffectLayerLightSource,
+} from "@/effects/effect-layer";
 import {
   DEFAULT_SKYBOX_CLOUDS_PARAMS,
   FULL_MOON_SKYBOX_CLOUDS_PARAMS,
@@ -131,10 +134,12 @@ function NumericSlider({
 
 function SwitchRow({
   checked,
+  disabled = false,
   label,
   onCheckedChange,
 }: {
   checked: boolean;
+  disabled?: boolean;
   label: string;
   onCheckedChange: (checked: boolean) => void;
 }) {
@@ -144,6 +149,7 @@ function SwitchRow({
       <Switch
         aria-label={label}
         checked={checked}
+        disabled={disabled}
         onCheckedChange={onCheckedChange}
         size="sm"
       />
@@ -173,17 +179,12 @@ function directionFromAngles(elevation: number, azimuth: number): VectorTuple {
   ];
 }
 
-function directionForReference(layer: { params: unknown; type: string }): VectorTuple | null {
-  if (layer.type === "spot") {
-    return [...(layer.params as SpotState).centerDirection] as VectorTuple;
-  }
-
-  if (layer.type === "image") {
-    const direction = (layer.params as ImageState).placement?.centerDirection;
-    return direction ? ([...direction] as VectorTuple) : null;
-  }
-
-  return null;
+/**
+ * Light-source info via the addon capability — the widget has no per-type
+ * knowledge; any layer whose addon implements getLightSource is linkable.
+ */
+function lightSourceForLayer(layer: EffectLayer): EffectLayerLightSource | null {
+  return getEffectLayerAddon(layer.type).getLightSource?.(layer) ?? null;
 }
 
 function SectionTitle({ children }: { children: ReactNode }) {
@@ -217,16 +218,20 @@ export function CloudsWidget() {
   const references = effectLayers.filter(
     (layer) =>
       layer.id !== selectedLayerId &&
-      (layer.type === "image" || layer.type === "spot"),
+      Boolean(getEffectLayerAddon(layer.type).getLightSource),
   );
 
-  const effectiveLightDirection = (light: SkyboxCloudLightParams): VectorTuple => {
+  const linkedLightSource = (
+    light: SkyboxCloudLightParams,
+  ): EffectLayerLightSource | null => {
     const target = light.directionLayerId
       ? references.find((layer) => layer.id === light.directionLayerId)
       : null;
-    return target
-      ? directionForReference(target) ?? light.direction
-      : light.direction;
+    return target ? lightSourceForLayer(target) : null;
+  };
+
+  const effectiveLightDirection = (light: SkyboxCloudLightParams): VectorTuple => {
+    return linkedLightSource(light)?.direction ?? light.direction;
   };
 
   const setLightAngle = (
@@ -252,6 +257,7 @@ export function CloudsWidget() {
 
   const renderLight = (lightName: LightName, label: string) => {
     const light = clouds[lightName];
+    const source = linkedLightSource(light);
     const effectiveDirection = effectiveLightDirection(light);
     const angles = directionToAngles(effectiveDirection);
     const linked = Boolean(light.directionLayerId);
@@ -270,9 +276,20 @@ export function CloudsWidget() {
                   lightName,
                   value === "manual" ? null : value,
                   value === "manual"
-                    ? effectiveDirection
+                    ? {
+                        // Bake the linked source's effective look so the frame
+                        // before/after unlinking is identical.
+                        direction: effectiveDirection,
+                        ...(source
+                          ? {
+                              intensity:
+                                light.intensity * source.intensityScale,
+                              ...(source.rendersOwnDisc ? { disc: false } : {}),
+                            }
+                          : {}),
+                      }
                     : target
-                      ? directionForReference(target) ?? undefined
+                      ? { direction: lightSourceForLayer(target)?.direction }
                       : undefined,
                 ),
               );
@@ -287,7 +304,7 @@ export function CloudsWidget() {
                 <SelectItem value="manual">Manual</SelectItem>
                 {references.map((layer) => (
                   <SelectItem
-                    disabled={!directionForReference(layer)}
+                    disabled={!lightSourceForLayer(layer)}
                     key={layer.id}
                     value={layer.id}
                   >
@@ -333,6 +350,14 @@ export function CloudsWidget() {
           step={0.05}
           value={light.intensity}
         />
+        {source && source.intensityScale !== 1 ? (
+          <div className="flex items-center justify-end gap-1 font-mono text-[10px] text-muted-foreground">
+            <span>× {source.intensityScale.toFixed(2)} =</span>
+            <span className="text-foreground">
+              {(light.intensity * source.intensityScale).toFixed(2)}
+            </span>
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
           <span>Tint</span>
           <FloatingColorPicker
@@ -348,7 +373,8 @@ export function CloudsWidget() {
           />
         </div>
         <SwitchRow
-          checked={light.disc}
+          checked={source?.rendersOwnDisc ? false : light.disc}
+          disabled={Boolean(source?.rendersOwnDisc)}
           label="Disc"
           onCheckedChange={(checked) =>
             update((params) => cloudsOps.setLightDisc(params, lightName, checked))

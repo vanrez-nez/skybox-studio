@@ -19,10 +19,7 @@ import {
   type ImagePlacement,
   type ImageState,
 } from "@/effects/layers/image/state";
-import type {
-  CloudsNumericParameterKey,
-  CloudsState,
-} from "@/effects/layers/clouds/state";
+import type { CloudsState } from "@/effects/layers/clouds/state";
 import type {
   FieldGradientAnchor,
   FieldGradientMode,
@@ -61,7 +58,6 @@ import {
 export { IMAGE_PLACEMENT_TRANSACTION_SCOPE };
 export type {
   EffectLayerBlendModePreview,
-  CloudsNumericParameterKey,
   CloudsState,
   FieldGradientAnchor,
   FieldGradientMode,
@@ -130,6 +126,48 @@ export type LayersSlice = {
 };
 
 const initialEffectLayers: EffectLayer[] = [];
+
+function removeLayerAndDetachCloudLights(
+  layers: EffectLayer[],
+  layerId: string,
+): EffectLayer[] {
+  const target = layers.find((layer) => layer.id === layerId);
+  const direction =
+    target?.type === "spot"
+      ? ([...(target.params as SpotState).centerDirection] as [number, number, number])
+      : target?.type === "image"
+        ? ((target.params as ImageState).placement?.centerDirection ?? null)
+        : null;
+
+  return layers
+    .filter((layer) => layer.id !== layerId)
+    .map((layer) => {
+      if (layer.type !== "clouds") {
+        return layer;
+      }
+
+      const params = layer.params as CloudsState;
+      let changed = false;
+      const detach = (light: CloudsState["sun"]): CloudsState["sun"] => {
+        if (light.directionLayerId !== layerId) {
+          return light;
+        }
+
+        changed = true;
+        return {
+          ...light,
+          direction: direction ? [...direction] : light.direction,
+          directionLayerId: null,
+        };
+      };
+      const sun = detach(params.sun);
+      const moon = detach(params.moon);
+
+      return changed
+        ? cloneEffectLayer({ ...layer, params: { ...params, sun, moon } })
+        : layer;
+    });
+}
 
 function cloneEffectLayerForHistory(layer: EffectLayer): EffectLayer {
   if (layer.type !== "image") {
@@ -274,7 +312,7 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         return state;
       }
 
-      const nextLayers = state.effectLayers.filter((layer) => layer.id !== id);
+      const nextLayers = removeLayerAndDetachCloudLights(state.effectLayers, id);
       const selectedLayer =
         state.selectedLayerId === id
           ? nextLayers[Math.max(0, deleteIndex - 1)] ?? nextLayers[0]
@@ -299,7 +337,10 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         return state;
       }
 
-      const nextLayers = state.effectLayers.filter((layer) => layer.id !== state.selectedLayerId);
+      const nextLayers = removeLayerAndDetachCloudLights(
+        state.effectLayers,
+        state.selectedLayerId,
+      );
       const selectedLayer = nextLayers[Math.max(0, deleteIndex - 1)] ?? nextLayers[0];
 
       return {

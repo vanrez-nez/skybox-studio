@@ -9,8 +9,8 @@ export type SunParams = {
   elevation: number;
   color: string;
   intensity: number;
-  // When true the sun tracks the sky's brightest spot layer (direction + colour) instead of the
-  // azimuth/elevation/colour above.
+  // When true the key light tracks the first enabled Sun or Moon layer (direction + colour) instead
+  // of the azimuth/elevation/colour above.
   linkToSky: boolean;
 };
 

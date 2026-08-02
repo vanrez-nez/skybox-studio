@@ -39,7 +39,7 @@ import { starfieldClipContainsDirection } from "@/runtime/starfield";
 import { findScenarioAddon, type ScenarioInstance } from "@/scenarios/scenario";
 import { SceneEnvironment, sunDirectionFromAngles } from "@/scenarios/scene-environment";
 import type { SceneParams } from "@/scenarios/scene-params";
-import { SkyEnvironment, sunFromSky } from "@/scenarios/sky-environment";
+import { lightFromSky, SkyEnvironment } from "@/scenarios/sky-environment";
 import { SkyboxOrbitControls } from "./SkyboxOrbitControls";
 import {
   IMAGE_PLACEMENT_TRANSACTION_SCOPE,
@@ -524,7 +524,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       const params = currentSceneParams;
-      const linked = params.sun.linkToSky ? sunFromSky(buildSkyboxManifest()) : null;
+      const linked = params.sun.linkToSky ? lightFromSky(buildSkyboxManifest()) : null;
 
       sceneEnvironment.apply(params, {
         color: linked?.color ?? new THREE.Color(params.sun.color),

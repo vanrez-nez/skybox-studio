@@ -1,28 +1,36 @@
 import { FieldGroup } from "@/components/ui/primitives/field-group";
 import { Widget } from "@/components/sidebar/panels/Widget";
+import { createSkyboxManifest } from "@/effects/skybox-manifest";
+import { findSkyLightReference } from "@/scenarios/sky-environment";
 import { ColorRow, SliderRow, ToggleRow } from "./fields";
 import { useWorkspaceStore } from "@/store/app";
 
 const degrees = (value: number) => `${Math.round(value)}°`;
 const units = (value: number) => `${Math.round(value)}`;
 
-// Scene parameters shared by every scenario: the sun, the ambient term, fog and the camera.
+// Scene parameters shared by every scenario: the key light, ambient term, fog and camera.
 export function SceneWidget() {
+  const effectLayers = useWorkspaceStore((state) => state.effectLayers);
   const sceneParams = useWorkspaceStore((state) => state.sceneParams);
   const updateSceneParams = useWorkspaceStore((state) => state.updateSceneParams);
   const { ambient, fog, sun } = sceneParams;
+  const lightReference = findSkyLightReference(createSkyboxManifest(effectLayers));
+  const lightLabel = lightReference?.type === "moon" ? "Moon" : "Sun";
+  const linkedReference = sun.linkToSky ? lightReference : null;
 
   return (
     <Widget title="Scene" contentClassName="grid gap-3">
-      <FieldGroup collapsible contentClassName="grid gap-3" label="Sun">
-        <ToggleRow
-          label="Link to sky"
-          onChange={(linkToSky) => updateSceneParams({ sun: { ...sun, linkToSky } })}
-          value={sun.linkToSky}
-        />
-        {sun.linkToSky ? (
+      <FieldGroup collapsible contentClassName="grid gap-3" label={lightLabel}>
+        {lightReference ? (
+          <ToggleRow
+            label={`Link to ${lightLabel}`}
+            onChange={(linkToSky) => updateSceneParams({ sun: { ...sun, linkToSky } })}
+            value={sun.linkToSky}
+          />
+        ) : null}
+        {linkedReference ? (
           <p className="text-xs text-muted-foreground/70">
-            Direction and colour follow the sky's brightest spot layer.
+            Direction and colour follow {linkedReference.name}.
           </p>
         ) : (
           <>

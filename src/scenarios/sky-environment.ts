@@ -6,8 +6,8 @@ import {
   migrateManifestToV2,
   type SkyboxGpuBakeService,
   type SkyboxManifest,
+  type SkyboxManifestLayer,
   type SkyboxManifestNode,
-  type SkyboxSpotParams,
 } from "@/runtime/index";
 import {
   createStarfieldGpuBakeService,
@@ -176,43 +176,72 @@ export class SkyEnvironment {
   }
 }
 
-// Reads the sun straight off the sky: the brightest enabled spot layer gives the direction, and the
-// composited sky colour in that direction gives the tint. Returns null when there's no spot layer,
-// so the caller falls back to the manual azimuth/elevation.
-export function sunFromSky(
-  manifest: SkyboxManifest
-): { color: THREE.Color; direction: THREE.Vector3 } | null {
-  const spots = collectLayers(
-    migrateManifestToV2(manifest).nodes,
-    (node) => node.type === "spot"
-  ) as Array<{ params: SkyboxSpotParams }>;
+type SkyLightLayer = Extract<SkyboxManifestLayer, { type: "moon" | "sun" }>;
 
-  if (spots.length === 0) {
+export type SkyLightReference = {
+  direction: THREE.Vector3;
+  id: string;
+  name: string;
+  type: SkyLightLayer["type"];
+};
+
+// The layer list is already in the same top-to-bottom order shown by the editor. Pick one enabled
+// celestial reference from that order so Preview never tries to represent both a sun and a moon.
+// Spots remain artistic sky layers; only an authored Sun or Moon can own the terrain key light.
+export function findSkyLightReference(manifest: SkyboxManifest): SkyLightReference | null {
+  const [layer] = collectLayers(
+    migrateManifestToV2(manifest).nodes,
+    (node) => node.type === "sun" || node.type === "moon"
+  ) as SkyLightLayer[];
+
+  if (!layer) {
     return null;
   }
 
-  const brightest = spots.reduce((best, spot) =>
-    spot.params.brightness > best.params.brightness ? spot : best
-  );
-  const [x, y, z] = brightest.params.centerDirection;
+  const [x, y, z] =
+    layer.type === "sun"
+      ? layer.params.centerDirection
+      : layer.params.placement.centerDirection;
   const direction = new THREE.Vector3(x, y, z);
+  const lengthSquared = direction.lengthSq();
 
-  if (direction.lengthSq() === 0) {
+  if (!Number.isFinite(lengthSquared) || lengthSquared === 0) {
     return null;
   }
 
   direction.normalize();
 
+  return {
+    direction,
+    id: layer.id,
+    name: layer.name,
+    type: layer.type,
+  };
+}
+
+// Reads Preview's key light straight off the first Sun/Moon reference. The composited sky colour in
+// that direction supplies its tint; the caller retains manual direction/colour as the no-reference
+// fallback.
+export function lightFromSky(
+  manifest: SkyboxManifest
+): (SkyLightReference & { color: THREE.Color }) | null {
+  const reference = findSkyLightReference(manifest);
+
+  if (!reference) {
+    return null;
+  }
+
+  const { direction } = reference;
   const [r, g, b] = evaluateSkyboxDirection(manifest, [direction.x, direction.y, direction.z]);
   // evaluateSkyboxDirection returns LINEAR rgb, which is what THREE.Color wants internally.
   const color = new THREE.Color();
 
   color.setRGB(r, g, b, THREE.LinearSRGBColorSpace);
 
-  // A spot can be arbitrarily bright; normalise so intensity stays the user's control.
+  // The sampled source can be arbitrarily bright; normalise so intensity stays the user's control.
   const peak = Math.max(color.r, color.g, color.b, 1);
 
   color.multiplyScalar(1 / peak);
 
-  return { color, direction };
+  return { ...reference, color };
 }

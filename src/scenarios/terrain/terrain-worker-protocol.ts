@@ -4,6 +4,8 @@ export type TerrainWorkerRequest = {
   params: TerrainSamplingParams;
   resolution: number;
   revision: number;
+  /** World vertical units divided by world horizontal units. */
+  surfaceSlopeScale: number;
   type: "generate";
 };
 

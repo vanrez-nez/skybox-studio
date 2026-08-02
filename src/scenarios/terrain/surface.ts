@@ -53,6 +53,7 @@ const GRASS_COLOR_1: TerrainColor = [0.15, 0.3, 0.1];
 const GRASS_COLOR_2: TerrainColor = [0.4, 0.5, 0.2];
 const GRASS_HEIGHT = 0.465;
 const DRAINAGE_WIDTH = 0.3;
+const MINIMUM_ROCK_SHADE = 0.55;
 
 const MATERIAL_COLORS = Object.fromEntries(
   TERRAIN_MATERIALS.map((material) => [material.id, material.color])
@@ -106,8 +107,12 @@ export function calculateTerrainSurface({
   const occlusion = clamp01(erosion + 0.5);
   const weights: TerrainMaterialWeights = { dirt: 0, grass: 0, rock: 1, snow: 0 };
 
-  // Bare rock everywhere to begin with, darkened toward the base of the relief.
-  const rockShade = smoothstep(0.4, 0.52, height);
+  // The ShaderToy fades low rock all the way to black because its water plane hides nearly all of
+  // that band. The sky preview has no water surface, so retain readable rock instead of exposing
+  // black albedo holes wherever a valley approaches the reference waterline.
+  const rockShade =
+    MINIMUM_ROCK_SHADE +
+    (1 - MINIMUM_ROCK_SHADE) * smoothstep(0.4, 0.52, height);
 
   coverWith(weights, "dirt", smoothstep(0.6, 0, occlusion + breakup * 1.5));
   coverWith(weights, "snow", smoothstep(0.53, 0.6, height + breakup * 0.1));
@@ -187,7 +192,11 @@ export function calculateTerrainColor(input: TerrainSurfaceInput): TerrainColor 
   ];
 }
 
-export function terrainMapNormalY(maps: TerrainMaps, index: number): number {
+export function terrainMapNormalY(
+  maps: TerrainMaps,
+  index: number,
+  slopeScale = 1
+): number {
   const column = index % maps.resolution;
   const row = Math.floor(index / maps.resolution);
   const nextColumn = Math.min(column + 1, maps.resolution - 1);
@@ -200,7 +209,12 @@ export function terrainMapNormalY(maps: TerrainMaps, index: number): number {
     ((maps.height[nextRow * maps.resolution + column] ?? height) - height) *
     (maps.resolution - 1);
 
-  return 1 / Math.sqrt(1 + derivativeX * derivativeX + derivativeY * derivativeY);
+  const scaledDerivativeX = derivativeX * slopeScale;
+  const scaledDerivativeY = derivativeY * slopeScale;
+
+  return 1 / Math.sqrt(
+    1 + scaledDerivativeX * scaledDerivativeX + scaledDerivativeY * scaledDerivativeY
+  );
 }
 
 export type TerrainSurfaceMaps = {
@@ -212,7 +226,10 @@ export type TerrainSurfaceMaps = {
 
 // DataTexture rows start at UV y=0, while PlaneGeometry's first vertex row uses UV y=1. Bake rows
 // upside-down so the texture features remain registered with the worker-generated displacement.
-export function generateTerrainSurfaceMaps(maps: TerrainMaps): TerrainSurfaceMaps {
+export function generateTerrainSurfaceMaps(
+  maps: TerrainMaps,
+  slopeScale = 1
+): TerrainSurfaceMaps {
   const texelCount = maps.resolution * maps.resolution * 4;
   const tint = new Uint8Array(texelCount);
   const weights = new Uint8Array(texelCount);
@@ -227,7 +244,7 @@ export function generateTerrainSurfaceMaps(maps: TerrainMaps): TerrainSurfaceMap
         breakup: maps.breakup[sourceIndex] ?? 0,
         erosion: maps.erosion[sourceIndex] ?? 0,
         height: maps.height[sourceIndex] ?? 0.5,
-        normalY: terrainMapNormalY(maps, sourceIndex),
+        normalY: terrainMapNormalY(maps, sourceIndex, slopeScale),
         ridgeMap: maps.ridgeMap[sourceIndex] ?? 1,
         trees: maps.trees[sourceIndex] ?? -1,
       });

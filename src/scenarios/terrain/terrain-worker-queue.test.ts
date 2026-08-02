@@ -43,10 +43,10 @@ describe("TerrainWorkerQueue", () => {
     const onResult = vi.fn();
     const queue = new TerrainWorkerQueue({ worker, onResult, onError: vi.fn() });
     const params = pickTerrainSamplingParams(createDefaultTerrainParams());
-    const first = queue.request(params, 257);
+    const first = queue.request(params, 257, 1);
 
-    queue.request({ ...params, seed: 2 }, 257);
-    const latest = queue.request({ ...params, seed: 3 }, 257);
+    queue.request({ ...params, seed: 2 }, 257, 1);
+    const latest = queue.request({ ...params, seed: 3 }, 257, 1);
 
     expect(worker.postMessage).toHaveBeenCalledTimes(1);
 
@@ -68,7 +68,8 @@ describe("TerrainWorkerQueue", () => {
     const queue = new TerrainWorkerQueue({ worker, onResult, onError: vi.fn() });
     const revision = queue.request(
       pickTerrainSamplingParams(createDefaultTerrainParams()),
-      257
+      257,
+      1
     );
 
     queue.dispose();

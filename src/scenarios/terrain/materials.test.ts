@@ -39,12 +39,12 @@ describe("terrain material tiles", () => {
   it("resolves surface detail far finer than the feature map", () => {
     const metresPerTexel = TERRAIN_TILE_WORLD_SIZE / TERRAIN_TILE_RESOLUTION;
 
-    // The 512² feature map spans the whole 2400 m terrain (~4.7 m per texel);
-    // a tile has to be orders of magnitude finer or there is no detail win.
-    expect(metresPerTexel).toBeLessThan(0.05);
+    // The 512² feature map spans the whole 2400 m terrain (~4.7 m per texel), while material
+    // texture detail stays comfortably sub-metre without becoming centimetre-scale noise.
+    expect(metresPerTexel).toBeLessThan(0.2);
   });
 
-  it("generates one deterministic opaque-free tile per material", () => {
+  it("generates one deterministic opaque tile per material", () => {
     const first = generateTerrainMaterialTiles(RESOLUTION);
     const second = generateTerrainMaterialTiles(RESOLUTION);
 
@@ -53,6 +53,10 @@ describe("terrain material tiles", () => {
     for (const id of TERRAIN_MATERIAL_IDS) {
       expect(first.color[id]).toEqual(second.color[id]);
       expect(first.color[id]).toHaveLength(RESOLUTION * RESOLUTION * 4);
+
+      for (let index = 3; index < first.color[id].length; index += 4) {
+        expect(first.color[id][index]).toBe(255);
+      }
     }
 
     expect(first.normal).toEqual(second.normal);
@@ -72,17 +76,6 @@ describe("terrain material tiles", () => {
     expect(means.dirt[0]).toBeGreaterThan(means.rock[0]);
     expect(means.grass[1]).toBeGreaterThan(means.grass[0]);
     expect(means.grass[1]).toBeGreaterThan(means.grass[2]);
-  });
-
-  it("carries the grain in alpha so materials can interlock", () => {
-    const tiles = generateTerrainMaterialTiles(RESOLUTION);
-
-    for (const id of TERRAIN_MATERIAL_IDS) {
-      const alpha = channelMean(tiles.color[id], 3);
-
-      expect(alpha).toBeGreaterThan(16);
-      expect(alpha).toBeLessThan(239);
-    }
   });
 
   it("wraps seamlessly so the repeat has no visible edge", () => {

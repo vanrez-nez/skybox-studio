@@ -6,6 +6,7 @@ import {
   calculateTerrainColor,
   calculateTerrainSurface,
   generateTerrainSurfaceMaps,
+  terrainMapNormalY,
   TERRAIN_TINT_RANGE,
 } from "@/scenarios/terrain/surface";
 
@@ -112,8 +113,9 @@ describe("terrain material coverage", () => {
     expect(peak.weights.snow).toBeCloseTo(1, 6);
     expect(slope.weights.grass).toBeCloseTo(1, 6);
     expect(base.weights.rock).toBeCloseTo(1, 6);
-    // The base of the relief keeps rock's material but darkened.
-    expect(base.rockShade).toBeLessThan(0.5);
+    // The base remains darker rock, but never the black band that the reference hides under water.
+    expect(base.rockShade).toBeGreaterThanOrEqual(0.55);
+    expect(base.rockShade).toBeLessThan(1);
   });
 
   it("keeps the composed colour equal to the material blend the renderer draws", () => {
@@ -152,6 +154,23 @@ describe("terrain material coverage", () => {
 });
 
 describe("terrain surface maps", () => {
+  it("classifies slope in the same vertical-to-horizontal scale as the rendered mesh", () => {
+    const maps: TerrainMaps = {
+      breakup: new Float32Array(4),
+      erosion: new Float32Array(4),
+      height: new Float32Array([0, 1, 0, 1]),
+      resolution: 2,
+      ridgeMap: new Float32Array(4),
+      trees: new Float32Array(4),
+    };
+
+    const sourceScale = terrainMapNormalY(maps, 0, 1);
+    const flattenedPreview = terrainMapNormalY(maps, 0, 0.25);
+
+    expect(sourceScale).toBeCloseTo(1 / Math.sqrt(2), 6);
+    expect(flattenedPreview).toBeGreaterThan(sourceScale);
+  });
+
   it("bakes coverage and tint with rows aligned to PlaneGeometry UVs", () => {
     const maps: TerrainMaps = {
       breakup: new Float32Array(4),

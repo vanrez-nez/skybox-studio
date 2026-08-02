@@ -39,11 +39,11 @@ export function TerrainPanel() {
         <SliderRow
           format={units}
           label="Height"
-          max={400}
+          max={3000}
           min={0}
-          onChange={(height) => set({ height })}
-          step={5}
-          value={params.height}
+          onChange={(reliefHeight) => set({ reliefHeight })}
+          step={25}
+          value={params.reliefHeight}
         />
         <SliderRow
           label="Frequency"

@@ -43,23 +43,23 @@ export function createDefaultSceneParams(): SceneParams {
     ambient: {
       skyColor: "#9db6d4",
       groundColor: "#3a3226",
-      intensity: 0.15,
+      intensity: 0.25,
       environmentIntensity: 0.6,
     },
     fog: {
       enabled: true,
-      color: "#ffffff",
-      near: 30,
-      // Kept inside the default terrain's rim (extent 2400 → 1200 out) so the ground fades into fog
-      // before its boundary is reachable.
-      far: 670,
+      // A blue-grey distance haze approximates the reference atmosphere without bleaching every
+      // mountain beyond 30 units to white. The far edge still disappears before the 1200-unit rim.
+      color: "#9db6d4",
+      near: 350,
+      far: 1150,
     },
     fov: 50,
     sun: {
       azimuth: 135,
       elevation: 25,
       color: "#fff2dd",
-      intensity: 0.35,
+      intensity: 0.8,
       linkToSky: true,
     },
   };

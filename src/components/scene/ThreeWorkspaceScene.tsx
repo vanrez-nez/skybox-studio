@@ -406,7 +406,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     applySkyboxRenderFlags();
 
     const scenarioRoot = new THREE.Group();
-    const sceneEnvironment = new SceneEnvironment(scene);
+    const sceneEnvironment = new SceneEnvironment(scene, renderer);
 
     scene.add(liveSkybox);
     scene.add(skyGeometry);

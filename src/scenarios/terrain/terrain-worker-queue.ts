@@ -44,7 +44,11 @@ export class TerrainWorkerQueue {
     this.#worker.onmessage = (event) => this.#handleResponse(event.data);
   }
 
-  request(params: TerrainSamplingParams, resolution: number): number {
+  request(
+    params: TerrainSamplingParams,
+    resolution: number,
+    surfaceSlopeScale: number
+  ): number {
     if (this.#disposed) {
       throw new Error("Cannot request terrain from a disposed worker queue.");
     }
@@ -52,7 +56,13 @@ export class TerrainWorkerQueue {
     const revision = ++this.#nextRevision;
 
     this.#latestRevision = revision;
-    this.#pending = { params, resolution, revision, type: "generate" };
+    this.#pending = {
+      params,
+      resolution,
+      revision,
+      surfaceSlopeScale,
+      type: "generate",
+    };
     this.#dispatch();
 
     return revision;

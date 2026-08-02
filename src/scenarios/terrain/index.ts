@@ -22,23 +22,19 @@ import { registerScenarioAddon, type ScenarioAddon } from "@/scenarios/scenario"
 
 export const TERRAIN_SCENARIO_ID = "terrain";
 
-// Five erosion octaves reach much finer scales than the old FBM. A 256-segment grid is a practical
-// compromise: 66k vertices resolve the reference features while the expensive sampling stays in a
-// worker and the WebGPU draw remains comfortably below a million triangles.
-const SEGMENTS = 256;
 const MAP_RESOLUTION = 512;
-const EYE_HEIGHT = 25;
+// Keep one mesh vertex per generated height sample. Downsampling the 512² filter output to 256²
+// erased the smaller branching gullies before the renderer ever saw them.
+const SEGMENTS = MAP_RESOLUTION - 1;
+// The reference views the whole heightfield from well outside its surface. The preview must remain
+// an environment view, but 25 units placed the camera close enough to magnify each 4.7-unit height
+// texel into a broad smooth patch. This higher overlook retains a believable landscape horizon.
+const EYE_HEIGHT = 80;
 
 type TerrainRenderMaps = TerrainMaps & {
   tint: Uint8Array;
   weights: Uint8Array;
 };
-
-// Height-blend controls. `DEPTH` is how far a material's own grain can push it
-// past its coverage, `BAND` the width of the transition once it wins — a
-// narrow band gives an interlocking edge instead of a linear cross-fade.
-const HEIGHT_BLEND_DEPTH = 0.35;
-const HEIGHT_BLEND_BAND = 0.12;
 
 function samplingParamsEqual(previous: TerrainParams, next: TerrainParams): boolean {
   return (
@@ -115,7 +111,10 @@ function buildTerrainGeometry(params: TerrainParams, maps: TerrainMaps): THREE.B
       row / SEGMENTS
     );
 
-    position.setY(index, (height - originHeight) * params.height - EYE_HEIGHT);
+    position.setY(
+      index,
+      (height - originHeight) * params.reliefHeight - EYE_HEIGHT
+    );
   }
 
   position.needsUpdate = true;
@@ -222,8 +221,10 @@ export const terrainScenarioAddon: ScenarioAddon<TerrainParams> = {
       normalMap: tileNormalTexture,
       roughness: params.roughness,
     });
-    material.normalScale.set(0.65, 0.65);
+    material.normalScale.set(0.35, 0.35);
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     const worker = new Worker(new URL("./terrain.worker.ts", import.meta.url), { type: "module" });
     let currentMaps: TerrainRenderMaps | null = null;
     let currentFeatureTextures: THREE.DataTexture[] = [];
@@ -240,14 +241,9 @@ export const terrainScenarioAddon: ScenarioAddon<TerrainParams> = {
       mesh.visible = true;
     };
 
-    /*
-     * Paint the tiled material textures with the feature coverage.
-     *
-     * Each material contributes its own tile, and the winner at a texel is
-     * decided by coverage plus that tile's own grain (alpha), so the boundary
-     * follows the material's texture rather than the feature map's ~5 m
-     * bilinear ramp. Only the tint and the rock shade come from the map.
-     */
+    // Paint the material tiles with exactly the coverage produced by the source classification.
+    // Letting tile grain choose a winner created large material islands unrelated to height or
+    // slope, which is why the previous colours visibly disagreed with the landform.
     const applyMaps = (maps: TerrainRenderMaps) => {
       const weightsTexture = buildTerrainFeatureTexture(
         maps.weights,
@@ -272,26 +268,26 @@ export const terrainScenarioAddon: ScenarioAddon<TerrainParams> = {
       const coverage = textureNode(weightsTexture);
       const tint = textureNode(tintTexture);
       const tiles = tileTextures.map((texture) => textureNode(texture));
-      const scores = tiles.map((tile, index) => {
-        const weight = [coverage.r, coverage.g, coverage.b, coverage.a][index];
-
-        return weight.add(tile.a.mul(HEIGHT_BLEND_DEPTH));
-      });
-      const peak = scores[0].max(scores[1]).max(scores[2]).max(scores[3]);
-      const threshold = peak.sub(HEIGHT_BLEND_BAND);
-      const banded = scores.map((score) => score.sub(threshold).max(0));
-      const total = banded[0].add(banded[1]).add(banded[2]).add(banded[3]).max(0.0001);
+      const total = coverage.r
+        .add(coverage.g)
+        .add(coverage.b)
+        .add(coverage.a)
+        .max(0.0001);
       // Rock alone carries the map's relief darkening; the other materials are
       // shaded only by the shared tint.
       const blended = tiles[0].rgb
         .mul(tint.a)
-        .mul(banded[0])
-        .add(tiles[1].rgb.mul(banded[1]))
-        .add(tiles[2].rgb.mul(banded[2]))
-        .add(tiles[3].rgb.mul(banded[3]))
+        .mul(coverage.r)
+        .add(tiles[1].rgb.mul(coverage.g))
+        .add(tiles[2].rgb.mul(coverage.b))
+        .add(tiles[3].rgb.mul(coverage.a))
         .div(total);
+      const surfaceColor = blended.mul(tint.rgb.mul(TERRAIN_TINT_RANGE));
 
-      material.colorNode = blended.mul(tint.rgb.mul(TERRAIN_TINT_RANGE)) as any;
+      material.colorNode = surfaceColor as any;
+      // Runevision's renderer always adds sky ambient, sun bounce and atmosphere. A small terrain-
+      // only floor preserves that readability when the preview document has no sky layer yet.
+      material.emissiveNode = surfaceColor.mul(0.1) as any;
       material.needsUpdate = true;
     };
 
@@ -313,7 +309,11 @@ export const terrainScenarioAddon: ScenarioAddon<TerrainParams> = {
 
     mesh.name = "Terrain";
     mesh.visible = false;
-    queue.request(pickTerrainSamplingParams(params), MAP_RESOLUTION);
+    queue.request(
+      pickTerrainSamplingParams(params),
+      MAP_RESOLUTION,
+      params.reliefHeight / params.extent
+    );
 
     return {
       root: mesh,
@@ -321,7 +321,11 @@ export const terrainScenarioAddon: ScenarioAddon<TerrainParams> = {
         const next = resolveTerrainParams(value);
         const requiresSampling = !samplingParamsEqual(currentParams, next);
         const requiresProjection =
-          currentParams.extent !== next.extent || currentParams.height !== next.height;
+          currentParams.extent !== next.extent ||
+          currentParams.reliefHeight !== next.reliefHeight;
+        const requiresSurfaceClassification =
+          currentParams.reliefHeight / currentParams.extent !==
+          next.reliefHeight / next.extent;
         const extentChanged = currentParams.extent !== next.extent;
 
         currentParams = next;
@@ -331,10 +335,16 @@ export const terrainScenarioAddon: ScenarioAddon<TerrainParams> = {
           setTerrainTileWorldScale([...tileTextures, tileNormalTexture], next.extent);
         }
 
-        if (requiresSampling) {
-          queue.request(pickTerrainSamplingParams(next), MAP_RESOLUTION);
-        } else if (requiresProjection && currentMaps) {
+        if (requiresProjection && currentMaps) {
           applyGeometry(currentMaps);
+        }
+
+        if (requiresSampling || requiresSurfaceClassification) {
+          queue.request(
+            pickTerrainSamplingParams(next),
+            MAP_RESOLUTION,
+            next.reliefHeight / next.extent
+          );
         }
       },
       dispose: () => {

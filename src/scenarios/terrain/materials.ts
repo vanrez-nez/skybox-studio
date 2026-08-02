@@ -4,7 +4,7 @@
  * One 512px tile per surface material, tinted at generation with the palette
  * colour that the classification in `surface.ts` assigns to that feature.
  * The tiles repeat every TERRAIN_TILE_WORLD_SIZE metres, so surface detail is
- * resolved at 512 / 12 ≈ 43 texels per metre (~2.3 cm) regardless of the
+ * resolved at 512 / 96 ≈ 5 texels per metre regardless of the
  * feature map's resolution — the map only decides *where* each material goes,
  * never what it looks like up close.
  *
@@ -14,7 +14,7 @@
 export const TERRAIN_TILE_RESOLUTION = 512;
 // Metres spanned by one tile. Small enough that the near ground reads as
 // ground, large enough that the repeat is not obvious at mid distance.
-export const TERRAIN_TILE_WORLD_SIZE = 12;
+export const TERRAIN_TILE_WORLD_SIZE = 96;
 
 export const TERRAIN_MATERIAL_IDS = ["rock", "dirt", "grass", "snow"] as const;
 
@@ -42,17 +42,15 @@ export type TerrainMaterialProfile = {
  * per-texel tint can reach either end of that gradient with a multiplier.
  */
 /*
- * `baseCells` is deliberately high for every material. A tile repeats every
- * TERRAIN_TILE_WORLD_SIZE metres, and the eye reads a repeat through its
- * *large* features — a 2 m blotch recurring on a 12 m lattice is obvious,
- * while sub-metre grain is not. The macro variation that keeps the ground
- * from looking uniform comes from the feature map instead.
+ * The tile is intentionally much broader than the previous 12 m repeat. The reference detail
+ * buffer spans the whole terrain and its visible breakup lives at metre-to-gully scales; repeating
+ * centimetre grain hid those forms and made the preview look like a material swatch.
  */
 export const TERRAIN_MATERIALS: readonly TerrainMaterialProfile[] = [
   {
     baseCells: 18,
     color: [0.22, 0.2, 0.2],
-    contrast: 0.5,
+    contrast: 0.24,
     id: "rock",
     ridged: 0.6,
     seed: 0x2e63a9,
@@ -61,7 +59,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterialProfile[] = [
   {
     baseCells: 22,
     color: [0.6, 0.5, 0.4],
-    contrast: 0.34,
+    contrast: 0.18,
     id: "dirt",
     ridged: 0.12,
     seed: 0x71b38d,
@@ -70,7 +68,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterialProfile[] = [
   {
     baseCells: 28,
     color: [0.275, 0.4, 0.15],
-    contrast: 0.46,
+    contrast: 0.22,
     id: "grass",
     ridged: 0,
     seed: 0x4d91c7,
@@ -79,7 +77,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterialProfile[] = [
   {
     baseCells: 16,
     color: [1, 1, 1],
-    contrast: 0.11,
+    contrast: 0.08,
     id: "snow",
     ridged: 0,
     seed: 0x8fa21b,
@@ -212,10 +210,7 @@ export function generateTerrainMaterialTiles(
         tile[destination] = Math.round(linearToSrgb(profile.color[0] * modulation) * 255);
         tile[destination + 1] = Math.round(linearToSrgb(profile.color[1] * modulation) * 255);
         tile[destination + 2] = Math.round(linearToSrgb(profile.color[2] * modulation) * 255);
-        // Alpha carries the raw grain, which the renderer uses as a surface
-        // height so materials interlock along their grain instead of fading
-        // into each other across the feature map's coarse texels.
-        tile[destination + 3] = Math.round(grain * 255);
+        tile[destination + 3] = 255;
       }
     }
 

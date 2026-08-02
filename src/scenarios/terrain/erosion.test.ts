@@ -42,7 +42,7 @@ describe("advanced terrain erosion", () => {
     expect(first.erosion).toBeLessThanOrEqual(1);
     expect(first.ridgeMap).toBeGreaterThanOrEqual(0);
     expect(first.ridgeMap).toBeLessThanOrEqual(1);
-    expect(first.ridgeMap).toBeCloseTo(0.584360209, 8);
+    expect(first.ridgeMap).toBeCloseTo(0.764008259, 8);
     expect(first.trees).toBeGreaterThanOrEqual(-1);
     expect(first.trees).toBeLessThanOrEqual(1);
   });
@@ -86,11 +86,12 @@ describe("advanced terrain erosion", () => {
 });
 
 describe("terrain parameter migration", () => {
-  it("merges partial legacy records and drops obsolete colour fields", () => {
+  it("merges partial legacy records and drops obsolete colour and flat-height fields", () => {
     const resolved = resolveTerrainParams({
       colorHigh: "#ffffff",
       colorLow: "#000000",
       extent: 1800,
+      height: 400,
       seed: 42,
     });
 
@@ -99,13 +100,18 @@ describe("terrain parameter migration", () => {
     expect(resolved.erosionStrength).toBe(0.22);
     expect(resolved).not.toHaveProperty("colorHigh");
     expect(resolved).not.toHaveProperty("colorLow");
+    expect(resolved).not.toHaveProperty("height");
+    expect(resolved.reliefHeight).toBe(createDefaultTerrainParams().reliefHeight);
   });
 
   it("rejects non-finite persisted values", () => {
     const defaults = createDefaultTerrainParams();
-    const resolved = resolveTerrainParams({ height: Number.NaN, seed: Number.POSITIVE_INFINITY });
+    const resolved = resolveTerrainParams({
+      reliefHeight: Number.NaN,
+      seed: Number.POSITIVE_INFINITY,
+    });
 
-    expect(resolved.height).toBe(defaults.height);
+    expect(resolved.reliefHeight).toBe(defaults.reliefHeight);
     expect(resolved.seed).toBe(defaults.seed);
   });
 });

@@ -22,7 +22,7 @@ workerSelf.onmessage = (event) => {
 
   try {
     const maps = generateTerrainMaps(request.params, request.resolution);
-    const surface = generateTerrainSurfaceMaps(maps);
+    const surface = generateTerrainSurfaceMaps(maps, request.surfaceSlopeScale);
     const response: TerrainWorkerResult = {
       breakup: maps.breakup.buffer as ArrayBuffer,
       erosion: maps.erosion.buffer as ArrayBuffer,

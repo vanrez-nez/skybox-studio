@@ -19,14 +19,31 @@ export class SceneEnvironment {
   readonly root = new THREE.Group();
 
   #scene: THREE.Scene;
+  #renderer: THREE.WebGPURenderer;
   #sun = new THREE.DirectionalLight(0xffffff, 1);
   #ambient = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
   #fog = new THREE.Fog(0x000000, 1, 1000);
   #attached = false;
   #environment: THREE.Texture | null = null;
+  #previousShadowMapEnabled = false;
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, renderer: THREE.WebGPURenderer) {
     this.#scene = scene;
+    this.#renderer = renderer;
+    this.#sun.castShadow = true;
+    this.#sun.shadow.mapSize.set(2048, 2048);
+    this.#sun.shadow.bias = -0.00015;
+    this.#sun.shadow.normalBias = 0.5;
+
+    const shadowCamera = this.#sun.shadow.camera;
+
+    shadowCamera.left = -1600;
+    shadowCamera.right = 1600;
+    shadowCamera.top = 1600;
+    shadowCamera.bottom = -1600;
+    shadowCamera.near = 1;
+    shadowCamera.far = 4000;
+    shadowCamera.updateProjectionMatrix();
     this.root.add(this.#sun);
     this.root.add(this.#sun.target);
     this.root.add(this.#ambient);
@@ -38,6 +55,8 @@ export class SceneEnvironment {
     }
 
     this.#attached = true;
+    this.#previousShadowMapEnabled = this.#renderer.shadowMap.enabled;
+    this.#renderer.shadowMap.enabled = true;
     this.#scene.add(this.root);
     this.#scene.environment = this.#environment;
   }
@@ -48,6 +67,7 @@ export class SceneEnvironment {
     }
 
     this.#attached = false;
+    this.#renderer.shadowMap.enabled = this.#previousShadowMapEnabled;
     this.#scene.remove(this.root);
     this.#scene.fog = null;
     this.#scene.environment = null;

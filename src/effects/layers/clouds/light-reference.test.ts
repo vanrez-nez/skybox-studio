@@ -11,7 +11,7 @@ import * as cloudsOps from "@/effects/layers/clouds/operations";
 import { createDefaultImageState } from "@/effects/layers/image/state";
 import { createDefaultMoonState } from "@/effects/layers/moon/state";
 import { createDefaultSpotState } from "@/effects/layers/spot/state";
-import { removeLayerAndDetachCloudLights } from "@/store/modules/layers";
+import { removeLayerAndDetachLightReferences } from "@/store/modules/layers";
 
 function layer<TParams>(
   type: string,
@@ -85,7 +85,7 @@ describe("setLightReference baking", () => {
   });
 });
 
-describe("removeLayerAndDetachCloudLights", () => {
+describe("removeLayerAndDetachLightReferences", () => {
   it("bakes a deleted moon reference's effective look into the clouds light", () => {
     const moon = layer("moon", "moon-1", {
       ...createDefaultMoonState(),
@@ -99,7 +99,7 @@ describe("removeLayerAndDetachCloudLights", () => {
     clouds.sun.intensity = 50;
     clouds.sun.disc = true;
 
-    const next = removeLayerAndDetachCloudLights(
+    const next = removeLayerAndDetachLightReferences(
       [layer("clouds", "clouds-1", clouds), moon],
       "moon-1",
     );
@@ -118,7 +118,7 @@ describe("removeLayerAndDetachCloudLights", () => {
     const spot = layer("spot", "spot-1", createDefaultSpotState([0, 1, 0]));
     const other = layer("spot", "spot-2", createDefaultSpotState([1, 0, 0]));
 
-    const next = removeLayerAndDetachCloudLights(
+    const next = removeLayerAndDetachLightReferences(
       [layer("clouds", "clouds-1", clouds), spot, other],
       "spot-2",
     );

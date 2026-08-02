@@ -46,7 +46,17 @@ import {
   type StarfieldState,
 } from "@/effects/layers/starfield/state";
 import {
+  cloneSunState,
+  createDefaultSunState,
+  type SunState,
+} from "@/effects/layers/sun/state";
+import {
   computeMoonLightSource,
+  computeSunLightSource,
+  positionFromSun,
+  radiusScaleFromSun,
+  sunFromPosition,
+  sunFromRadiusScale,
   type SkyboxFieldGradientParams,
   type SkyboxGradientParams,
   type SkyboxImageParams,
@@ -108,6 +118,11 @@ export type SerializedStarfieldEffect = {
   type: "starfield";
 };
 
+export type SerializedSunEffect = {
+  params: SunState;
+  type: "sun";
+};
+
 export type SerializedEffectLayer = {
   blendMode?: EffectLayerBlendMode;
   effect:
@@ -117,7 +132,8 @@ export type SerializedEffectLayer = {
     | SerializedImageEffect
     | SerializedMoonEffect
     | SerializedSpotEffect
-    | SerializedStarfieldEffect;
+    | SerializedStarfieldEffect
+    | SerializedSunEffect;
   enabled: boolean;
   id: string;
   locked?: boolean;
@@ -644,6 +660,86 @@ export const spotLayerAddon: EffectLayerAddon<"spot", SpotState> = {
   type: "spot",
 };
 
+export const sunLayerAddon: EffectLayerAddon<"sun", SunState> = {
+  cloneParams: cloneSunState,
+  createDefaultParams: (context) => createDefaultSunState(context?.centerDirection),
+  defaultBlendMode: "normal",
+  displayName: "Sun",
+  getDefaultName: () => "Sun",
+  getFocusTarget: (layer) => {
+    if (!layer.enabled) {
+      return null;
+    }
+
+    const direction = layer.params.centerDirection;
+
+    return isFiniteDirection(direction) ? { direction, type: "direction" } : null;
+  },
+  // Editor state carries no resolved occluder fields, so this reports the
+  // UN-dimmed intensity; the runtime resolver computes the eclipse-dimmed
+  // value for rendering (documented editor/runtime resolution split).
+  getLightSource: (layer) => {
+    const source = computeSunLightSource(layer.params);
+
+    return {
+      direction: source.direction,
+      intensityScale: source.intensityScale ?? 1,
+      angularRadius: source.angularRadius ?? 0,
+      rendersOwnDisc: source.rendersOwnDisc ?? false,
+    };
+  },
+  load: (serialized) => cloneSunState(serialized.params),
+  serialize: (params) => ({ params: cloneSunState(params), type: "sun" }),
+  toManifestParams: cloneSunState,
+  runtime: {
+    getTopologyKey: (layer) => ({
+      enabled: layer.enabled,
+      id: layer.id,
+      type: layer.type,
+    }),
+    updateLayerParams: (skybox, layer, manifestLayer) => {
+      skybox.updateLayer(layer.id, manifestLayer.params);
+    },
+  },
+  transformCapabilities: {
+    "2d-position": {
+      read: (layer) => (layer.type === "sun" ? positionFromSun(layer.params) : null),
+      write: (layer, value) =>
+        layer.type === "sun"
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                centerDirection: sunFromPosition(layer.params, value).centerDirection,
+              },
+            }
+          : null,
+    },
+    scale: {
+      read: (layer) => {
+        if (layer.type !== "sun") {
+          return null;
+        }
+
+        const scale = radiusScaleFromSun(layer.params);
+
+        return { x: scale, y: scale };
+      },
+      write: (layer, value) =>
+        layer.type === "sun"
+          ? {
+              ...layer,
+              params: {
+                ...layer.params,
+                angularRadius: sunFromRadiusScale(layer.params, value.x).angularRadius,
+              },
+            }
+          : null,
+    },
+  },
+  type: "sun",
+};
+
 export const starfieldLayerAddon: EffectLayerAddon<"starfield", StarfieldState> = {
   cloneParams: cloneStarfieldState,
   createDefaultParams: createDefaultStarfieldState,
@@ -671,6 +767,7 @@ export const builtInEffectLayerAddons = [
   cloudsLayerAddon,
   fieldGradientLayerAddon,
   spotLayerAddon,
+  sunLayerAddon,
   moonLayerAddon,
   imageLayerAddon,
   starfieldLayerAddon,

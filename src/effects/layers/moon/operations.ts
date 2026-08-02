@@ -12,7 +12,7 @@ import {
 import type { MoonState } from "./state";
 
 export type MoonNumericKey = {
-  [K in keyof MoonState]: MoonState[K] extends number ? K : never;
+  [K in keyof MoonState]-?: MoonState[K] extends number ? K : never;
 }[keyof MoonState];
 
 const MOON_POSITION_X_TO_AZIMUTH = 180;
@@ -53,6 +53,20 @@ export function setMoonStyle(params: MoonState, style: SkyboxMoonStyle): MoonSta
   return params.style === style
     ? params
     : { ...params, exposure: MOON_STYLE_EXPOSURE[style], style };
+}
+
+/**
+ * Dynamic lighting link: when set, the runtime derives the moon's sun
+ * direction and photometric phase from the referenced layer's geometry, and
+ * the manual phase/sunTilt sliders are ignored.
+ */
+export function setMoonLightReference(
+  params: MoonState,
+  lightLayerId: string | null,
+): MoonState {
+  return params.lightLayerId === lightLayerId
+    ? params
+    : { ...params, lightLayerId };
 }
 
 export function setMoonResolutionMode(
@@ -104,6 +118,27 @@ export function setMoonCenterDirection(
       centerDirection,
     }),
   };
+}
+
+/** Radius as a scale of the base angular size — the sun/spot "R" semantics. */
+export function radiusScaleFromMoon(params: MoonState) {
+  return (
+    params.placement.angularWidth /
+    Math.max(params.placement.baseAngularWidth, 0.0001)
+  );
+}
+
+export function setMoonRadiusScale(params: MoonState, radiusScale: number): MoonState {
+  const scale = Math.max(0.01, radiusScale);
+
+  if (radiusScaleFromMoon(params) === scale) {
+    return params;
+  }
+
+  return setMoonAngularSize(
+    params,
+    params.placement.baseAngularWidth * scale,
+  );
 }
 
 export function setMoonAngularSize(params: MoonState, angularSize: number): MoonState {

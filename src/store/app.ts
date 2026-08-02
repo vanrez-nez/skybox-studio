@@ -3,7 +3,7 @@ import type { StateCreator } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
 
-import { stripEffectLayerRuntimeData } from "@/effects/effect-layer";
+import { getEffectLayerAddon, stripEffectLayerRuntimeData } from "@/effects/effect-layer";
 import { createDefaultSceneParams, type SceneParams } from "@/scenarios/scene-params";
 import {
   createLayersSlice,
@@ -103,6 +103,22 @@ function normalizeEffectLayerLockState(effectLayers: WorkspaceStore["effectLayer
     ...layer,
     locked: layer.locked ?? false,
   }));
+}
+
+// Rehydrated params may come from an older build with a different shape; each
+// addon's cloneParams normalizes (fills new defaults, strips removed keys) so
+// no widget ever reads an undefined field. Unknown layer types pass through.
+function normalizeEffectLayerParams(effectLayers: WorkspaceStore["effectLayers"]) {
+  return effectLayers.map((layer) => {
+    try {
+      return {
+        ...layer,
+        params: getEffectLayerAddon(layer.type).cloneParams(layer.params),
+      };
+    } catch {
+      return layer;
+    }
+  });
 }
 
 function beginStorageHistoryTransaction() {
@@ -344,7 +360,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
 
         return {
           ...nextState,
-          effectLayers: normalizeEffectLayerLockState(nextState.effectLayers),
+          effectLayers: normalizeEffectLayerParams(
+            normalizeEffectLayerLockState(nextState.effectLayers),
+          ),
           // Backfill scene params written by an older build so a newly added light/fog field is
           // never undefined (the shallow spread above would otherwise keep the stale object).
           sceneParams: mergeSceneParams(nextState.sceneParams),

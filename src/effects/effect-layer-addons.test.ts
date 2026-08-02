@@ -27,6 +27,7 @@ describe("effect layer addons", () => {
       "clouds",
       "field-gradient",
       "spot",
+      "sun",
       "moon",
       "image",
       "starfield",

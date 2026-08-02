@@ -1,6 +1,5 @@
-import * as THREE from "three";
-
 import { FloatingColorPicker } from "@/components/ui/composables/FloatingColorPicker";
+import { NumericDragField } from "@/components/ui/composables/numeric-drag-input";
 import {
   Point2Input,
   type Point2Value,
@@ -22,6 +21,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/primitives/tabs";
+import { getEffectLayerAddon } from "@/effects/effect-layer";
 import * as moonOps from "@/effects/layers/moon/operations";
 import {
   createDefaultMoonState,
@@ -53,6 +53,7 @@ const SURFACE_CONTROLS: NumberControl[] = [
 
 const REALISTIC_LIGHT_CONTROLS: NumberControl[] = [
   { key: "exposure", label: "Exposure", min: 0.1, max: 8, step: 0.01 },
+  { key: "shadowSoftness", label: "Terminator softness", min: 0, max: 1, step: 0.01 },
 ];
 
 const CARTOON_LIGHT_CONTROLS: NumberControl[] = [
@@ -101,6 +102,7 @@ function mergeChangedPointValue(
 }
 
 function NumericSlider({
+  disabled = false,
   label,
   max,
   min,
@@ -108,6 +110,7 @@ function NumericSlider({
   step,
   value,
 }: {
+  disabled?: boolean;
   label: string;
   max: number;
   min: number;
@@ -128,6 +131,7 @@ function NumericSlider({
       </div>
       <Slider
         aria-label={label}
+        disabled={disabled}
         max={max}
         min={min}
         onPointerCancel={() => commitHistoryTransaction()}
@@ -164,8 +168,17 @@ function ColorRow({
 export function MoonWidget() {
   const beginHistoryTransaction = useWorkspaceStore((state) => state.beginHistoryTransaction);
   const commitHistoryTransaction = useWorkspaceStore((state) => state.commitHistoryTransaction);
+  const effectLayers = useWorkspaceStore((state) => state.effectLayers);
+  const selectedLayerId = useWorkspaceStore((state) => state.selectedLayerId);
   const updateSelectedLayerParams = useWorkspaceStore((state) => state.updateSelectedLayerParams);
   const moon = useSelectedLayerParams<MoonState>("moon") ?? createDefaultMoonState();
+  // Any light-source-capable layer can dynamically light this moon.
+  const lightReferences = effectLayers.filter(
+    (layer) =>
+      layer.id !== selectedLayerId &&
+      Boolean(getEffectLayerAddon(layer.type).getLightSource),
+  );
+  const lightLinked = Boolean(moon.lightLayerId);
 
   const update = (
     operation: (params: MoonState) => MoonState,
@@ -259,39 +272,92 @@ export function MoonWidget() {
         </div>
       </div>
 
-      <Point2Input
-        fields={{
-          x: { label: "X", min: -1, max: 1, step: 0.01 },
-          y: { label: "Y", min: -1, max: 1, step: 0.01 },
-        }}
-        formatValue={(value) => value.toFixed(2)}
-        label="Position"
-        layout="vertical"
-        onBlur={() => commitHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
-        onFocus={() => beginHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
-        onInteractionEnd={() => commitHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
-        onInteractionStart={() => beginHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
-        onValueChange={updatePosition}
-        value={position}
-      />
+      <div className="widget-point-groups">
+        <Point2Input
+          fields={{
+            x: { label: "X", min: -1, max: 1, step: 0.01 },
+            y: { label: "Y", min: -1, max: 1, step: 0.01 },
+          }}
+          formatValue={(value) => value.toFixed(2)}
+          label="Position"
+          layout="vertical"
+          onBlur={() => commitHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onFocus={() => beginHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onInteractionEnd={() => commitHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onInteractionStart={() => beginHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onValueChange={updatePosition}
+          value={position}
+        />
+        <NumericDragField
+          ariaLabel="Moon radius"
+          fieldLabel="R"
+          formatValue={(value) => {
+            const roundedValue = Number(value.toFixed(2));
+            return Number.isInteger(roundedValue) ? roundedValue.toFixed(0) : `${roundedValue}`;
+          }}
+          label="Radius"
+          min={0.01}
+          onBlur={() => commitHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onFocus={() => beginHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onInteractionEnd={() => commitHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onInteractionStart={() => beginHistoryTransaction(MOON_PLACEMENT_TRANSACTION_SCOPE)}
+          onValueChange={(value) =>
+            update((params) => moonOps.setMoonRadiusScale(params, value), { history: "skip" })
+          }
+          step={0.1}
+          value={moonOps.radiusScaleFromMoon(moon)}
+        />
+      </div>
 
       <div className="grid gap-3">
+        <div className="grid gap-1">
+          <span className="text-xs text-muted-foreground">Light reference</span>
+          <Select
+            onValueChange={(value) =>
+              update((params) =>
+                moonOps.setMoonLightReference(params, value === "manual" ? null : value),
+              )
+            }
+            value={moon.lightLayerId ?? "manual"}
+          >
+            <SelectTrigger aria-label="Moon light reference" className="w-full" size="xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="manual">Manual</SelectItem>
+                {lightReferences.map((layer) => (
+                  <SelectItem key={layer.id} value={layer.id}>
+                    {layer.name} ({layer.type})
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
         <NumericSlider
-          label="Angular size"
-          max={90}
-          min={0.25}
+          disabled={lightLinked}
+          label="Phase"
+          max={1}
+          min={0}
           onChange={(value, options) =>
-            update(
-              (params) => moonOps.setMoonAngularSize(params, THREE.MathUtils.degToRad(value)),
-              options,
-            )
+            update((params) => moonOps.setMoonNumber(params, "phase", value, 0, 1), options)
           }
-          step={0.25}
-          value={THREE.MathUtils.radToDeg(moon.placement.angularWidth)}
+          step={0.001}
+          value={moon.phase}
+        />
+        <NumericSlider
+          disabled={lightLinked}
+          label="Sun tilt"
+          max={1}
+          min={-1}
+          onChange={(value, options) =>
+            update((params) => moonOps.setMoonNumber(params, "sunTilt", value, -1, 1), options)
+          }
+          step={0.01}
+          value={moon.sunTilt}
         />
         {renderControls([
-          { key: "phase", label: "Phase", min: 0, max: 1, step: 0.001 },
-          { key: "sunTilt", label: "Sun tilt", min: -1, max: 1, step: 0.01 },
           { key: "bodyRotation", label: "Body rotation", min: -Math.PI, max: Math.PI, step: 0.005 },
           { key: "bodyTilt", label: "Body tilt", min: -1.2, max: 1.2, step: 0.005 },
         ])}

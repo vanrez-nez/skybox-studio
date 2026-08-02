@@ -19,9 +19,11 @@ import {
 import type { CloudsState } from "@/effects/layers/clouds/state";
 import type { SpotState } from "@/effects/layers/spot/state";
 import type { StarfieldState } from "@/effects/layers/starfield/state";
+import type { SunState } from "@/effects/layers/sun/state";
 import * as imageOps from "@/effects/layers/image/operations";
 import * as moonOps from "@/effects/layers/moon/operations";
 import * as spotOps from "@/effects/layers/spot/operations";
+import * as sunOps from "@/effects/layers/sun/operations";
 import { EditorSkyboxSync } from "./EditorSkyboxSync";
 import {
   createAngularDecalPlacement,
@@ -31,6 +33,7 @@ import {
   projectDirectionToImageUv,
   Skybox,
   spotContainsDirection,
+  sunContainsDirection,
 } from "@/runtime/index";
 import { starfieldClipContainsDirection } from "@/runtime/starfield";
 import { findScenarioAddon, type ScenarioInstance } from "@/scenarios/scenario";
@@ -340,10 +343,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       placement: null as ImagePlacement | null,
       pointerId: -1,
     };
+    // Shared by the spot AND sun layers — both drag a bare centerDirection +
+    // angularRadius; layerType picks the write op.
     const spotDragState = {
       angularRadius: 0,
       hasMoved: false,
       layerId: "",
+      layerType: "spot" as "spot" | "sun",
       offsetX: 0,
       offsetY: 0,
       pointerId: -1,
@@ -626,7 +632,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       const layer = layers.find((effectLayer) => effectLayer.id === layerId);
 
       return layer &&
-        (layer.type === "image" || layer.type === "moon" || layer.type === "spot") &&
+        (layer.type === "image" ||
+          layer.type === "moon" ||
+          layer.type === "spot" ||
+          layer.type === "sun") &&
         layer.enabled
         ? layer.id
         : null;
@@ -1105,6 +1114,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
           continue;
         }
 
+        if (layer.type === "sun") {
+          if (sunContainsDirection(direction, layer.params as SunState)) {
+            hits.push({ layerId: layer.id, type: layer.type });
+          }
+          continue;
+        }
+
         if (layer.type === "starfield") {
           if (starfieldClipContainsDirection(direction, (layer.params as StarfieldState).clip)) {
             hits.push({ layerId: layer.id, type: layer.type });
@@ -1147,7 +1163,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
     const updateHoveredEditorLayerFromPointer = (event: PointerEvent) => {
       const editorHit = getSceneLayerHits(event).find(
-        (hit) => hit.type === "image" || hit.type === "moon" || hit.type === "spot"
+        (hit) =>
+          hit.type === "image" ||
+          hit.type === "moon" ||
+          hit.type === "spot" ||
+          hit.type === "sun"
       );
 
       setHoveredEditorLayerId(editorHit?.layerId ?? null);
@@ -1252,7 +1272,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
 
       updateLayerParams(
         spotDragState.layerId,
-        (params) => spotOps.setSpotPosition(params as SpotState, centerDirection),
+        (params) =>
+          spotDragState.layerType === "sun"
+            ? sunOps.setSunPosition(params as SunState, centerDirection)
+            : spotOps.setSpotPosition(params as SpotState, centerDirection),
         { history: "skip" }
       );
       syncSkybox();
@@ -1364,7 +1387,10 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       selectedLayerIdRef.current = hit.layerId;
       selectEffectLayer(hit.layerId);
       setSelectedEditorLayerId(
-        hit.type === "image" || hit.type === "moon" || hit.type === "spot"
+        hit.type === "image" ||
+          hit.type === "moon" ||
+          hit.type === "spot" ||
+          hit.type === "sun"
           ? hit.layerId
           : null,
       );
@@ -1409,13 +1435,13 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
     };
 
     const beginSpotDrag = (event: PointerEvent, hit: SceneLayerHit) => {
-      if (hit.type !== "spot") {
+      if (hit.type !== "spot" && hit.type !== "sun") {
         return false;
       }
 
       const hitLayer = effectLayersRef.current.find(
-        (layer): layer is EffectLayer<SpotState> =>
-          layer.id === hit.layerId && layer.type === "spot"
+        (layer): layer is EffectLayer<SpotState | SunState> =>
+          layer.id === hit.layerId && layer.type === hit.type
       );
 
       if (!hitLayer) {
@@ -1433,6 +1459,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       selectSceneLayerHit(hit);
       beginHistoryTransaction(SPOT_PLACEMENT_TRANSACTION_SCOPE);
       spotDragState.layerId = hit.layerId;
+      spotDragState.layerType = hit.type;
       spotDragState.pointerId = event.pointerId;
       spotDragState.angularRadius = hitLayer.params.angularRadius;
       spotDragState.offsetX = offset.x;
@@ -1496,7 +1523,11 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       const hoveredEditorHit = hits.find(
-        (hit) => hit.type === "image" || hit.type === "moon" || hit.type === "spot",
+        (hit) =>
+          hit.type === "image" ||
+          hit.type === "moon" ||
+          hit.type === "spot" ||
+          hit.type === "sun",
       );
       setHoveredEditorLayerId(hoveredEditorHit?.layerId ?? null);
 
@@ -1509,7 +1540,9 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
       }
 
       const selectedSpotHit = hits.find(
-        (hit) => hit.type === "spot" && hit.layerId === selectedLayerIdRef.current
+        (hit) =>
+          (hit.type === "spot" || hit.type === "sun") &&
+          hit.layerId === selectedLayerIdRef.current
       );
 
       if (selectedSpotHit && beginSpotDrag(event, selectedSpotHit)) {
@@ -1530,7 +1563,7 @@ export function ThreeWorkspaceScene({ mode }: ThreeWorkspaceSceneProps) {
         return;
       }
 
-      if (topHit.type === "spot" && beginSpotDrag(event, topHit)) {
+      if ((topHit.type === "spot" || topHit.type === "sun") && beginSpotDrag(event, topHit)) {
         return;
       }
 

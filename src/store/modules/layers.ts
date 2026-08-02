@@ -127,7 +127,7 @@ export type LayersSlice = {
 
 const initialEffectLayers: EffectLayer[] = [];
 
-export function removeLayerAndDetachCloudLights(
+export function removeLayerAndDetachLightReferences(
   layers: EffectLayer[],
   layerId: string,
 ): EffectLayer[] {
@@ -141,6 +141,32 @@ export function removeLayerAndDetachCloudLights(
   return layers
     .filter((layer) => layer.id !== layerId)
     .map((layer) => {
+      if (layer.type === "sun") {
+        // An eclipse is a physical relationship, not a tuned look: deleting
+        // the occluder simply ends it, so nothing is baked.
+        const params = layer.params as { occluderLayerId: string | null };
+
+        return params.occluderLayerId === layerId
+          ? cloneEffectLayer({
+              ...layer,
+              params: { ...params, occluderLayerId: null },
+            })
+          : layer;
+      }
+
+      if (layer.type === "moon") {
+        // Dynamic lighting is likewise geometric: deleting the light source
+        // reverts the moon to its manual phase controls.
+        const params = layer.params as { lightLayerId: string | null };
+
+        return params.lightLayerId === layerId
+          ? cloneEffectLayer({
+              ...layer,
+              params: { ...params, lightLayerId: null },
+            })
+          : layer;
+      }
+
       if (layer.type !== "clouds") {
         return layer;
       }
@@ -315,7 +341,7 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         return state;
       }
 
-      const nextLayers = removeLayerAndDetachCloudLights(state.effectLayers, id);
+      const nextLayers = removeLayerAndDetachLightReferences(state.effectLayers, id);
       const selectedLayer =
         state.selectedLayerId === id
           ? nextLayers[Math.max(0, deleteIndex - 1)] ?? nextLayers[0]
@@ -340,7 +366,7 @@ export const createLayersSlice: StateCreator<WorkspaceStore, [], [], LayersSlice
         return state;
       }
 
-      const nextLayers = removeLayerAndDetachCloudLights(
+      const nextLayers = removeLayerAndDetachLightReferences(
         state.effectLayers,
         state.selectedLayerId,
       );

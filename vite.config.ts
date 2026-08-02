@@ -14,8 +14,8 @@ const SPLASH_ASSET = "assets/splash.webp";
 // byte sizes. The splash preloader (src/lib/preload.ts) streams these to drive a real 0–100% bar;
 // uncompressed sizes make decompressed stream bytes match the total even when the host gzips.
 //
-// The texture-baking worker is deliberately excluded: it's only instantiated when the user opens an
-// image export (BakePreview), so counting its ~500 kB would make the boot bar wait on bytes nothing
+// Lazy workers are deliberately excluded: neither image export nor terrain generation is needed for
+// the initial editor view, so counting those chunks would make the boot bar wait on bytes nothing
 // needs. Non-CSS bundler assets (sourcemaps included) are skipped the same way.
 function loadManifestPlugin(): Plugin {
   return {
@@ -25,7 +25,10 @@ function loadManifestPlugin(): Plugin {
       const entries: { url: string; bytes: number }[] = [];
       for (const [fileName, output] of Object.entries(bundle)) {
         if (output.type === "chunk") {
-          if (fileName.includes("texture-baking.worker")) {
+          if (
+            fileName.includes("texture-baking.worker") ||
+            fileName.includes("terrain.worker")
+          ) {
             continue;
           }
           entries.push({ url: fileName, bytes: Buffer.byteLength(output.code) });

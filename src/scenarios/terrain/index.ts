@@ -1,125 +1,356 @@
 import * as THREE from "three/webgpu";
+import { texture as textureNode } from "three/tsl";
 
+import {
+  generateTerrainMaterialTiles,
+  TERRAIN_MATERIAL_IDS,
+  TERRAIN_TILE_WORLD_SIZE,
+} from "@/scenarios/terrain/materials";
+import { pickTerrainSamplingParams, type TerrainMaps } from "@/scenarios/terrain/erosion";
+import { TERRAIN_TINT_RANGE } from "@/scenarios/terrain/surface";
+import {
+  createDefaultTerrainParams,
+  resolveTerrainParams,
+  type TerrainParams,
+} from "@/scenarios/terrain/params";
+import type { TerrainWorkerResult } from "@/scenarios/terrain/terrain-worker-protocol";
+import {
+  TerrainWorkerQueue,
+  type TerrainWorkerPort,
+} from "@/scenarios/terrain/terrain-worker-queue";
 import { registerScenarioAddon, type ScenarioAddon } from "@/scenarios/scenario";
-import { fbm2 } from "@/scenarios/terrain/noise";
-import { createDefaultTerrainParams, type TerrainParams } from "@/scenarios/terrain/params";
 
 export const TERRAIN_SCENARIO_ID = "terrain";
 
-// Grid resolution. 200x200 is ~40k verts / 80k tris — regenerating it synchronously on a param
-// change costs a couple of milliseconds, which keeps slider dragging responsive without needing an
-// async rebuild.
-const SEGMENTS = 200;
-// The camera is pinned at the origin, so the surface directly beneath it is placed this far below —
-// you always stand ON the terrain at a consistent eye height, whatever the noise does there.
-// Offsetting from the heightfield's base instead would let a tall hill swallow the camera.
+// Five erosion octaves reach much finer scales than the old FBM. A 256-segment grid is a practical
+// compromise: 66k vertices resolve the reference features while the expensive sampling stays in a
+// worker and the WebGPU draw remains comfortably below a million triangles.
+const SEGMENTS = 256;
+const MAP_RESOLUTION = 512;
 const EYE_HEIGHT = 25;
 
-function smoothstep(edge0: number, edge1: number, value: number): number {
-  const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+type TerrainRenderMaps = TerrainMaps & {
+  tint: Uint8Array;
+  weights: Uint8Array;
+};
 
-  return t * t * (3 - 2 * t);
+// Height-blend controls. `DEPTH` is how far a material's own grain can push it
+// past its coverage, `BAND` the width of the transition once it wins — a
+// narrow band gives an interlocking edge instead of a linear cross-fade.
+const HEIGHT_BLEND_DEPTH = 0.35;
+const HEIGHT_BLEND_BAND = 0.12;
+
+function samplingParamsEqual(previous: TerrainParams, next: TerrainParams): boolean {
+  return (
+    previous.creaseRounding === next.creaseRounding &&
+    previous.erosionDetail === next.erosionDetail &&
+    previous.erosionOctaves === next.erosionOctaves &&
+    previous.erosionScale === next.erosionScale &&
+    previous.erosionStrength === next.erosionStrength &&
+    previous.frequency === next.frequency &&
+    previous.gain === next.gain &&
+    previous.gullyWeight === next.gullyWeight &&
+    previous.octaves === next.octaves &&
+    previous.ridgeRounding === next.ridgeRounding &&
+    previous.seed === next.seed
+  );
 }
 
-// Displaces a flat grid into a heightfield and tints it low→high. Vertex colours rather than a TSL
-// colorNode: the displacement is already CPU-side, so this keeps the whole surface definition in one
-// place and leaves the material a stock lit PBR one.
-function buildTerrainGeometry(params: TerrainParams): THREE.BufferGeometry {
+function terrainMapsFromResult(result: TerrainWorkerResult): TerrainRenderMaps {
+  return {
+    breakup: new Float32Array(result.breakup),
+    erosion: new Float32Array(result.erosion),
+    height: new Float32Array(result.height),
+    resolution: result.resolution,
+    ridgeMap: new Float32Array(result.ridgeMap),
+    tint: new Uint8Array(result.tint),
+    trees: new Float32Array(result.trees),
+    weights: new Uint8Array(result.weights),
+  };
+}
+
+function sampleTerrainMap(
+  values: Float32Array,
+  resolution: number,
+  u: number,
+  v: number
+): number {
+  const x = Math.min(resolution - 1, Math.max(0, u * (resolution - 1)));
+  const y = Math.min(resolution - 1, Math.max(0, v * (resolution - 1)));
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = Math.min(x0 + 1, resolution - 1);
+  const y1 = Math.min(y0 + 1, resolution - 1);
+  const tx = x - x0;
+  const ty = y - y0;
+  const top = (values[y0 * resolution + x0] ?? 0) * (1 - tx) +
+    (values[y0 * resolution + x1] ?? 0) * tx;
+  const bottom = (values[y1 * resolution + x0] ?? 0) * (1 - tx) +
+    (values[y1 * resolution + x1] ?? 0) * tx;
+
+  return top * (1 - ty) + bottom * ty;
+}
+
+function buildTerrainGeometry(params: TerrainParams, maps: TerrainMaps): THREE.BufferGeometry {
+  if (maps.resolution !== MAP_RESOLUTION) {
+    throw new Error(
+      `Expected a ${MAP_RESOLUTION}x${MAP_RESOLUTION} terrain map, received ${maps.resolution}.`
+    );
+  }
+
   const geometry = new THREE.PlaneGeometry(params.extent, params.extent, SEGMENTS, SEGMENTS);
 
   geometry.rotateX(-Math.PI / 2);
 
   const position = geometry.attributes.position as THREE.BufferAttribute;
-  const count = position.count;
-  const colors = new Float32Array(count * 3);
-  const halfExtent = params.extent / 2;
-  const low = new THREE.Color(params.colorLow);
-  const high = new THREE.Color(params.colorHigh);
-  const color = new THREE.Color();
-  // Ground level under the camera, so the eye height is honoured wherever the noise happens to put
-  // the surface at the origin.
-  const originHeight =
-    fbm2(0, 0, {
-      frequency: params.frequency,
-      gain: params.gain,
-      octaves: params.octaves,
-      seed: params.seed,
-    }) * params.height;
+  const originHeight = sampleTerrainMap(maps.height, maps.resolution, 0.5, 0.5);
 
-  for (let index = 0; index < count; index += 1) {
-    const x = position.getX(index);
-    const z = position.getZ(index);
-    const noise = fbm2(x / params.extent, z / params.extent, {
-      frequency: params.frequency,
-      gain: params.gain,
-      octaves: params.octaves,
-      seed: params.seed,
-    });
-    // Flatten toward the rim so the square boundary reads as a distant plain rather than a cliff.
-    // Fog then swallows whatever is left of it.
-    const radial = Math.hypot(x, z) / halfExtent;
-    const falloff = smoothstep(1, 0.45, radial);
-    const height = noise * params.height * falloff;
+  for (let index = 0; index < position.count; index += 1) {
+    const column = index % (SEGMENTS + 1);
+    const row = Math.floor(index / (SEGMENTS + 1));
+    const height = sampleTerrainMap(
+      maps.height,
+      maps.resolution,
+      column / SEGMENTS,
+      row / SEGMENTS
+    );
 
-    position.setY(index, height - originHeight - EYE_HEIGHT);
-
-    color.copy(low).lerp(high, smoothstep(0, 1, noise * falloff));
-    colors[index * 3] = color.r;
-    colors[index * 3 + 1] = color.g;
-    colors[index * 3 + 2] = color.b;
+    position.setY(index, (height - originHeight) * params.height - EYE_HEIGHT);
   }
 
   position.needsUpdate = true;
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  // Real normals from the displaced surface — this is why the heightfield is built on the CPU.
   geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
 
   return geometry;
 }
 
-// Params that only touch the material can be applied without rebuilding 40k vertices.
-function isGeometryDirty(previous: TerrainParams, next: TerrainParams): boolean {
-  return (
-    previous.colorHigh !== next.colorHigh ||
-    previous.colorLow !== next.colorLow ||
-    previous.extent !== next.extent ||
-    previous.frequency !== next.frequency ||
-    previous.gain !== next.gain ||
-    previous.height !== next.height ||
-    previous.octaves !== next.octaves ||
-    previous.seed !== next.seed
+/** Feature map: one texel per ~5 m, deciding which material covers the ground. */
+function buildTerrainFeatureTexture(
+  data: Uint8Array,
+  resolution: number,
+  name: string,
+  maxAnisotropy: number
+): THREE.DataTexture {
+  const texture = new THREE.DataTexture(
+    data,
+    resolution,
+    resolution,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType
   );
+
+  texture.name = name;
+  // Coverage and tint are data, not colour: no sRGB decode.
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = maxAnisotropy;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.needsUpdate = true;
+
+  return texture;
+}
+
+/** Material tile: repeats every TERRAIN_TILE_WORLD_SIZE metres. */
+function buildTerrainTileTexture(
+  data: Uint8Array,
+  resolution: number,
+  name: string,
+  colorSpace: THREE.ColorSpace,
+  maxAnisotropy: number
+): THREE.DataTexture {
+  const texture = new THREE.DataTexture(
+    data,
+    resolution,
+    resolution,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType
+  );
+
+  texture.name = name;
+  texture.colorSpace = colorSpace;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = maxAnisotropy;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.needsUpdate = true;
+
+  return texture;
+}
+
+function setTerrainTileWorldScale(textures: THREE.Texture[], extent: number): void {
+  const repeat = extent / TERRAIN_TILE_WORLD_SIZE;
+
+  for (const texture of textures) {
+    texture.repeat.set(repeat, repeat);
+    texture.updateMatrix();
+  }
 }
 
 export const terrainScenarioAddon: ScenarioAddon<TerrainParams> = {
   id: TERRAIN_SCENARIO_ID,
   displayName: "Terrain",
   createDefaultParams: createDefaultTerrainParams,
-  build: (_context, initialParams) => {
+  build: (context, initialParams) => {
+    const params = resolveTerrainParams(initialParams);
+    const maxAnisotropy = context.renderer.getMaxAnisotropy();
+    const tileData = generateTerrainMaterialTiles();
+    const tileTextures = TERRAIN_MATERIAL_IDS.map((id) =>
+      buildTerrainTileTexture(
+        tileData.color[id],
+        tileData.resolution,
+        `Terrain ${id} tile`,
+        THREE.SRGBColorSpace,
+        maxAnisotropy
+      )
+    );
+    const tileNormalTexture = buildTerrainTileTexture(
+      tileData.normal,
+      tileData.resolution,
+      "Terrain tile normal",
+      THREE.NoColorSpace,
+      maxAnisotropy
+    );
     const material = new THREE.MeshStandardNodeMaterial({
       metalness: 0,
-      roughness: initialParams.roughness,
-      vertexColors: true,
+      normalMap: tileNormalTexture,
+      roughness: params.roughness,
     });
-    const mesh = new THREE.Mesh(buildTerrainGeometry(initialParams), material);
+    material.normalScale.set(0.65, 0.65);
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+    const worker = new Worker(new URL("./terrain.worker.ts", import.meta.url), { type: "module" });
+    let currentMaps: TerrainRenderMaps | null = null;
+    let currentFeatureTextures: THREE.DataTexture[] = [];
+    let currentParams = params;
+    let disposed = false;
 
-    let current = initialParams;
+    setTerrainTileWorldScale([...tileTextures, tileNormalTexture], params.extent);
+
+    const applyGeometry = (maps: TerrainMaps) => {
+      const geometry = buildTerrainGeometry(currentParams, maps);
+
+      mesh.geometry.dispose();
+      mesh.geometry = geometry;
+      mesh.visible = true;
+    };
+
+    /*
+     * Paint the tiled material textures with the feature coverage.
+     *
+     * Each material contributes its own tile, and the winner at a texel is
+     * decided by coverage plus that tile's own grain (alpha), so the boundary
+     * follows the material's texture rather than the feature map's ~5 m
+     * bilinear ramp. Only the tint and the rock shade come from the map.
+     */
+    const applyMaps = (maps: TerrainRenderMaps) => {
+      const weightsTexture = buildTerrainFeatureTexture(
+        maps.weights,
+        maps.resolution,
+        "Terrain material coverage",
+        maxAnisotropy
+      );
+      const tintTexture = buildTerrainFeatureTexture(
+        maps.tint,
+        maps.resolution,
+        "Terrain tint",
+        maxAnisotropy
+      );
+
+      applyGeometry(maps);
+
+      for (const texture of currentFeatureTextures) {
+        texture.dispose();
+      }
+      currentFeatureTextures = [weightsTexture, tintTexture];
+
+      const coverage = textureNode(weightsTexture);
+      const tint = textureNode(tintTexture);
+      const tiles = tileTextures.map((texture) => textureNode(texture));
+      const scores = tiles.map((tile, index) => {
+        const weight = [coverage.r, coverage.g, coverage.b, coverage.a][index];
+
+        return weight.add(tile.a.mul(HEIGHT_BLEND_DEPTH));
+      });
+      const peak = scores[0].max(scores[1]).max(scores[2]).max(scores[3]);
+      const threshold = peak.sub(HEIGHT_BLEND_BAND);
+      const banded = scores.map((score) => score.sub(threshold).max(0));
+      const total = banded[0].add(banded[1]).add(banded[2]).add(banded[3]).max(0.0001);
+      // Rock alone carries the map's relief darkening; the other materials are
+      // shaded only by the shared tint.
+      const blended = tiles[0].rgb
+        .mul(tint.a)
+        .mul(banded[0])
+        .add(tiles[1].rgb.mul(banded[1]))
+        .add(tiles[2].rgb.mul(banded[2]))
+        .add(tiles[3].rgb.mul(banded[3]))
+        .div(total);
+
+      material.colorNode = blended.mul(tint.rgb.mul(TERRAIN_TINT_RANGE)) as any;
+      material.needsUpdate = true;
+    };
+
+    const queue = new TerrainWorkerQueue({
+      worker: worker as unknown as TerrainWorkerPort,
+      onError: (message) => {
+        console.error(`[Terrain] ${message}`);
+      },
+      onResult: (result) => {
+        if (disposed) {
+          return;
+        }
+
+        currentMaps = terrainMapsFromResult(result);
+        applyMaps(currentMaps);
+        context.requestRender();
+      },
+    });
 
     mesh.name = "Terrain";
+    mesh.visible = false;
+    queue.request(pickTerrainSamplingParams(params), MAP_RESOLUTION);
 
     return {
       root: mesh,
-      update: (params) => {
-        if (isGeometryDirty(current, params)) {
-          mesh.geometry.dispose();
-          mesh.geometry = buildTerrainGeometry(params);
+      update: (value) => {
+        const next = resolveTerrainParams(value);
+        const requiresSampling = !samplingParamsEqual(currentParams, next);
+        const requiresProjection =
+          currentParams.extent !== next.extent || currentParams.height !== next.height;
+        const extentChanged = currentParams.extent !== next.extent;
+
+        currentParams = next;
+        material.roughness = next.roughness;
+
+        if (extentChanged) {
+          setTerrainTileWorldScale([...tileTextures, tileNormalTexture], next.extent);
         }
 
-        material.roughness = params.roughness;
-        current = params;
+        if (requiresSampling) {
+          queue.request(pickTerrainSamplingParams(next), MAP_RESOLUTION);
+        } else if (requiresProjection && currentMaps) {
+          applyGeometry(currentMaps);
+        }
       },
       dispose: () => {
+        disposed = true;
+        queue.dispose();
         mesh.geometry.dispose();
+
+        for (const texture of currentFeatureTextures) {
+          texture.dispose();
+        }
+
+        for (const texture of tileTextures) {
+          texture.dispose();
+        }
+
+        tileNormalTexture.dispose();
         material.dispose();
       },
     };
